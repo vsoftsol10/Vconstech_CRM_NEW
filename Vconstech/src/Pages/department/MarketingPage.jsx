@@ -18,6 +18,8 @@ const normalizeChannel = (value) => {
   if (channel === "facebook" || channel === "fb" || channel === "meta ads") return "Facebook";
   if (channel === "website" || channel === "web") return "Website";
   if (channel === "email" || channel === "mail") return "Email";
+  if (channel === "instaram" || channel === "instagram") return "Instagram";
+
 
   return "";
 };
