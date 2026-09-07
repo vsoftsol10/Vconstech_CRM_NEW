@@ -110,6 +110,7 @@ const normalizeTicket = (body = {}) => ({
   location: body.location || null,
   contact_type: body.contact_type || null,
   category: body.category || null,
+  company_name: body.company_name || body.company || null,
   ticket_type: normalizeTicketType(body.ticket_type || body.type),
   urgency: body.urgency || "Medium",
   state: body.state || body.status || "Open",
@@ -158,8 +159,8 @@ const createTicketRecord = async (body) => {
     const result = await client.query(
       `INSERT INTO tickets
        (ticket_number, ticket_type, caller, opened_by, assigned_to, location, contact_type,
-        category, urgency, state, short_description, notes, due_date, department, email, thread_id, message_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        category, company_name, urgency, state, short_description, notes, due_date, department, email, thread_id, message_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING id`,
       [
         ticket_number,
@@ -170,6 +171,7 @@ const createTicketRecord = async (body) => {
         ticket.location,
         ticket.contact_type,
         ticket.category,
+        ticket.company_name,
         ticket.urgency,
         ticket.state,
         ticket.short_description,
@@ -300,15 +302,16 @@ const updateTicket = async (req, res) => {
       await client.query(
         `UPDATE tickets
          SET caller=$1, assigned_to=$2, location=$3, contact_type=$4,
-             category=$5, urgency=$6, state=$7, short_description=$8,
-             notes=$9, due_date=$10, department=$11, updated_at=NOW()
-         WHERE id=$12`,
+             category=$5, company_name=$6, urgency=$7, state=$8, short_description=$9,
+             notes=$10, due_date=$11, department=$12, updated_at=NOW()
+         WHERE id=$13`,
         [
           ticket.caller,
           assignee?.id || null,
           ticket.location,
           ticket.contact_type,
           ticket.category,
+          ticket.company_name,
           ticket.urgency,
           ticket.state,
           ticket.short_description,

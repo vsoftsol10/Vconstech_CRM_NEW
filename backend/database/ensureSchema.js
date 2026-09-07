@@ -137,7 +137,8 @@ const ensureMergeSchema = async () => {
   await pool.query(`
     ALTER TABLE IF EXISTS tickets
       ADD COLUMN IF NOT EXISTS department text,
-      ADD COLUMN IF NOT EXISTS ticket_type text DEFAULT 'request'
+      ADD COLUMN IF NOT EXISTS ticket_type text DEFAULT 'request',
+      ADD COLUMN IF NOT EXISTS company_name text
   `);
 
   await pool.query(`

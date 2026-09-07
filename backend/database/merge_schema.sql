@@ -104,7 +104,8 @@ ON notifications (team_member_id, reference_type, reference_id)
 WHERE reference_type = 'lead_follow_up';
 
 ALTER TABLE IF EXISTS tickets
-  ADD COLUMN IF NOT EXISTS ticket_type text DEFAULT 'request';
+  ADD COLUMN IF NOT EXISTS ticket_type text DEFAULT 'request',
+  ADD COLUMN IF NOT EXISTS company_name text;
 
 UPDATE tickets
 SET ticket_type = CASE

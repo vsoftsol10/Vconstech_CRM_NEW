@@ -35,6 +35,7 @@ const emptyTicket = {
   location: "",
   contact_type: "",
   category: "",
+  company_name: "",
   assigned_to: "",
   urgency: "Medium",
   state: "Open",
@@ -88,6 +89,7 @@ function ticketToForm(ticket) {
     location: ticket.location || "",
     contact_type: ticket.contact_type || "",
     category: ticket.category || "",
+    company_name: ticket.company_name || ticket.company || "",
     assigned_to: ticket.assigned_to || "",
     urgency: ticket.urgency || "Medium",
     state: ticket.state || ticket.status || "Open",
@@ -138,6 +140,7 @@ function buildChangeSummary(before, after) {
     location: "Location",
     contact_type: "Contact Type",
     category: "Category",
+    company_name: "Company",
     assigned_to: "Assignment",
     urgency: "Priority",
     state: "Status",
@@ -342,6 +345,7 @@ export default function TicketForm({ mode, ticketId, initialMode, inModal = fals
   const [ticket, setTicket] = useState(null);
   const [history, setHistory] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [companyOptions, setCompanyOptions] = useState([]);
   const [loading, setLoading] = useState(!isCreate);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -399,6 +403,26 @@ export default function TicketForm({ mode, ticketId, initialMode, inModal = fals
     };
 
     loadTeam();
+  }, []);
+
+  useEffect(() => {
+    const loadCompanies = async () => {
+      try {
+        const res = await fetch(`${API}/api/customers`);
+        const data = await res.json();
+        const customers = Array.isArray(data) ? data : data.customers || data.data?.customers || [];
+        const companies = [...new Set(
+          customers
+            .map((customer) => String(customer.company_name || customer.companyName || customer.company || "").trim())
+            .filter(Boolean)
+        )].sort((first, second) => first.localeCompare(second));
+        setCompanyOptions(companies);
+      } catch {
+        setCompanyOptions([]);
+      }
+    };
+
+    loadCompanies();
   }, []);
 
   useEffect(() => {
@@ -692,6 +716,9 @@ export default function TicketForm({ mode, ticketId, initialMode, inModal = fals
               </FormRow>
               <FormRow label="Category">
                 <SelectField value={form.category} onChange={set("category")} readOnly={isView} options={CATEGORY_OPTIONS} />
+              </FormRow>
+              <FormRow label="Company">
+                <SelectField value={form.company_name} onChange={set("company_name")} readOnly={isView} options={companyOptions} placeholder="Select Company" />
               </FormRow>
               <FormRow label="Assigned to">
                 <SelectField value={form.assigned_to} onChange={set("assigned_to")} readOnly={isView} options={assigneeOptions} />
