@@ -21,7 +21,7 @@ import { selectStyles } from "../../components/TeamMember/styles/selectStyles";
 
 const API = `${API_BASE_URL}`;
 
-const DEPARTMENTS = ["Sales", "Marketing", "Technical", "Support"].map((v) => ({
+const DEPARTMENTS = ["Sales", "Marketing", "Technical", "Support", "Admin"].map((v) => ({
   value: v,
   label: v,
 }));

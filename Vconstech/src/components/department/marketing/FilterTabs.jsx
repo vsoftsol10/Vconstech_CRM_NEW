@@ -1,13 +1,11 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { FiSliders } from "react-icons/fi";
 
-const tabs = ["All", "Open", "In progress", "Resolved"];
+const FilterTabs = ({ activeTab, setActiveTab, channels = [] }) => {
+  const tabs = ["All", ...channels];
 
-const FilterTabs = ({ activeTab, setActiveTab }) => {
   return (
     <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-      {/* Tabs */}
       <div className="flex items-center gap-2 flex-wrap">
         {tabs.map((tab) => (
           <button
@@ -31,10 +29,9 @@ const FilterTabs = ({ activeTab, setActiveTab }) => {
         ))}
       </div>
 
-      {/* Filters Button */}
       <button className="flex items-center gap-2 h-[40px] px-5 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all duration-300">
         <FiSliders className="text-base" />
-        Filters
+        Channels
       </button>
     </div>
   );

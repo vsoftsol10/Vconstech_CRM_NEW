@@ -264,6 +264,46 @@ const ensureMergeSchema = async () => {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS meta_conversations (
+      id bigserial PRIMARY KEY,
+      channel text NOT NULL,
+      channel_user_id text NOT NULL,
+      full_name text NULL,
+      phone_raw text NULL,
+      lead_id bigint NULL,
+      registration_status text NOT NULL DEFAULT 'pending',
+      registration_token_hash text NULL,
+      registration_expires_at timestamp without time zone NULL,
+      registration_completed_at timestamp without time zone NULL,
+      initial_message text NULL,
+      created_at timestamp without time zone DEFAULT NOW(),
+      updated_at timestamp without time zone DEFAULT NOW(),
+      UNIQUE (channel, channel_user_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS meta_conversations_registration_token_unique
+    ON meta_conversations (registration_token_hash)
+    WHERE registration_token_hash IS NOT NULL
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meta_messages (
+      id bigserial PRIMARY KEY,
+      conversation_id bigint NOT NULL REFERENCES meta_conversations(id) ON DELETE CASCADE,
+      direction text NOT NULL CHECK (direction IN ('in', 'out')),
+      text text NOT NULL,
+      created_at timestamp without time zone DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS meta_messages_conversation_created_idx
+    ON meta_messages (conversation_id, created_at ASC, id ASC)
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS task_updates (
       id bigserial PRIMARY KEY,
       task_id bigint NULL,

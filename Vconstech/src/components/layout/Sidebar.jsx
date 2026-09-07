@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import {
   FiGrid, FiTrendingUp, FiUsers,
-  FiLayers, FiClipboard, FiX, FiChevronDown, FiTag,
+  FiLayers, FiClipboard, FiX, FiChevronDown, FiTag, FiMessageSquare,
 } from "react-icons/fi";
 import { MdHeadsetMic, MdOutlineCode, MdOutlineCampaign } from "react-icons/md";
 import { CreditCard } from 'lucide-react';
@@ -17,6 +17,7 @@ import logo from "../../assets/logo.png"
 const menuItems = [
   { id: "dashboard",    label: "Dashboard",    icon: FiGrid,       path: "/dashboard" },
   { id: "lead-sales",   label: "Lead & Sales", icon: FiTrendingUp, path: "/lead-sales" },
+  { id: "lead-inbox",   label: "Lead Inbox",   icon: FiMessageSquare, path: "/lead-inbox" },
   { id: "customer",     label: "Customer",     icon: FiUsers,      path: "/customer" },
   { id: "team-members", label: 'Team Members', icon: CreditCard,   path: '/team-members' },
 
@@ -31,7 +32,7 @@ const menuItems = [
     ],
   },
   { id: "subscription", label: "Subscription", icon: FiClipboard, path: "/subscription" },
-  { id: "ticket", label: "Ticket", icon: FiTag, path: "/ticket" },
+  { id: "ticket", label: "Workspace", icon: FiTag, path: "/ticket" },
 ];
 
 // Stagger container for nav items on mount

@@ -11,6 +11,7 @@ const DEPARTMENTS = [
   "Marketing",
   "Technical",
   "Support",
+  "Admin",
 ].map((v) => ({
   value: v,
   label: v,

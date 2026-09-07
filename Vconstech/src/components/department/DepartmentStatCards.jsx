@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   FiTrendingUp,
   FiTrendingDown,
+  FiShield,
   FiTool,
   FiHeadphones,
   FiRadio,
@@ -14,6 +15,7 @@ const iconMap = {
   Marketing: FiRadio,
   Technical: FiTool,
   Support:   FiHeadphones,
+  Admin:     FiShield,
 };
 
 const DepartmentStatCards = () => {
@@ -39,8 +41,8 @@ const DepartmentStatCards = () => {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {[...Array(4)].map((_, i) => (
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+        {[...Array(5)].map((_, i) => (
           <div key={i} className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 shadow-sm animate-pulse h-[110px]" />
         ))}
       </div>
@@ -56,7 +58,7 @@ const DepartmentStatCards = () => {
   }
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
       {stats.map((s, i) => {
         const Icon       = iconMap[s.name] || FiTrendingUp;
         const isPositive = s.badge_type === "up";

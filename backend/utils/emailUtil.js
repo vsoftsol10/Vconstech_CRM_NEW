@@ -98,7 +98,7 @@ const sendWelcomeEmail = async (name, email, employeeId, autoPassword) => {
                 margin:25px 0;
               ">
                 <p><strong>Employee ID:</strong> ${employeeId}</p>
-                <p><strong>Employee ID:</strong> ${employeeId}</p>
+               
 <p><strong>Email:</strong> ${email}</p>
 <p><strong>Password:</strong> ${autoPassword}</p>
 

@@ -24,6 +24,7 @@ import CreateTicketPage from "./components/tickets/CreateTicket";
 import EditTicketPage from "./components/tickets/EditTicket";
 import Department from "./Pages/Department";
 import InvitationRegistration from "./Pages/Registration/InvitationRegistration";
+import LeadInbox from "./Pages/LeadInbox";
 function ProtectedRoute({ children }) {
   const employee = localStorage.getItem("employee");
   if (!employee) return <Navigate to="/" replace />;
@@ -49,6 +50,7 @@ function App() {
                 <Route path="/subscription" element={<Subscription />} />
                 <Route path="/customer" element={<CustomerPage />} />
                 <Route path="/lead-sales" element={<LeadPage />} />
+                <Route path="/lead-inbox" element={<LeadInbox />} />
                 <Route path="/department/sales" element={<Sales />} />
                 <Route path="/department/support" element={<Support />} />
                 <Route path="/department/marketing" element={<Marketing />} />

@@ -6,6 +6,7 @@ import {
   FiPhone,
   FiRadio,
   FiSearch,
+  FiShield,
   FiX,
   FiTool,
   FiTrendingUp,
@@ -18,6 +19,7 @@ const DEPARTMENTS = [
   { name: "Marketing", icon: FiRadio, accent: "bg-sky-50 text-sky-600 border-sky-100" },
   { name: "Technical", icon: FiTool, accent: "bg-violet-50 text-violet-600 border-violet-100" },
   { name: "Support", icon: FiHeadphones, accent: "bg-amber-50 text-amber-600 border-amber-100" },
+  { name: "Admin", icon: FiShield, accent: "bg-rose-50 text-rose-600 border-rose-100" },
 ];
 
 const formatDate = (value) => {
@@ -273,7 +275,7 @@ const DepartmentMemberColumns = () => {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         {DEPARTMENTS.map((department) => (
           <div key={department.name} className="h-[280px] rounded-2xl border border-gray-200 bg-white p-4 shadow-sm animate-pulse">
             <div className="mb-5 h-9 w-32 rounded-lg bg-gray-100" />
@@ -314,7 +316,7 @@ const DepartmentMemberColumns = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         {DEPARTMENTS.map((department) => (
           <DepartmentColumn
             key={department.name}

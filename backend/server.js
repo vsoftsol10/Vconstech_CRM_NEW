@@ -22,6 +22,7 @@ const ticketRoutes = require("./routes/ticketRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
+const metaRoutes = require("./routes/metaRoutes");
 const { integrationRoutes } = require("./integration");
 
 
@@ -46,6 +47,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/integration", integrationRoutes);
+app.use(metaRoutes);
 app.use("/api", (req, res) => {
   res.status(404).json({
     success: false,

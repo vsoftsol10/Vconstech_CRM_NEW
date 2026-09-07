@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const pool = require("../config/database");
 const { generateEmployeeId, generatePassword } = require("../utils/validators");
 
-const ALLOWED_DEPARTMENTS = ["Sales", "Marketing", "Technical", "Support"];
+const ALLOWED_DEPARTMENTS = ["Sales", "Marketing", "Technical", "Support", "Admin"];
 const SALES_CHART_COLORS = ["#F5C518", "#2ECC71", "#3B82F6", "#8B5CF6", "#F97316", "#14B8A6"];
 
 const normalizeValue = (value) =>
@@ -294,7 +294,7 @@ const createDepartmentMember = async (req, res) => {
     if (!ALLOWED_DEPARTMENTS.includes(department)) {
       return res.status(400).json({
         success: false,
-        error: "Invalid department. Must be Sales, Marketing, Technical, or Support.",
+        error: "Invalid department. Must be Sales, Marketing, Technical, Support, or Admin.",
       });
     }
 
