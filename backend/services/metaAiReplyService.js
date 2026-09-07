@@ -1,4 +1,5 @@
 const isGreeting = (text) => /^(hi|hello|hey|good\s+(morning|afternoon|evening))\W*$/i.test(text.trim());
+const hasDemoOrPricingRequest = (text) => /\b(demo|book a demo|schedule a demo|pricing|price|prices|quotation|quote|cost|implementation)\b/i.test(text);
 
 const customerConfirmedInterest = (messages) => {
   const inboundIndex = [...messages].map((message) => message.direction).lastIndexOf("in");
@@ -21,12 +22,16 @@ const fallbackReply = (messages) => {
   const latestInbound = [...messages].reverse().find((message) => message.direction === "in");
   const latestText = String(latestInbound?.text || "");
 
-  if (customerConfirmedInterest(messages)) {
-    return { reply: "Thanks for confirming your ERP requirement. I am sending the registration form now.", wantsRegistration: true };
+  if (hasDemoOrPricingRequest(latestText) || customerConfirmedInterest(messages)) {
+    return { reply: "Thanks for your ERP interest. I am sending the registration form now.", wantsRegistration: true };
   }
 
   if (isGreeting(latestText)) {
     return { reply: "Hello! Welcome. Are you looking for an ERP solution for your business?", wantsRegistration: false };
+  }
+
+  if (/\berp\b/i.test(latestText)) {
+    return { reply: "We can help with ERP demos, pricing, and implementation. Would you like a demo or pricing details?", wantsRegistration: false };
   }
 
   return { reply: "Thanks for sharing that. Are you looking for an ERP solution, a demo, or pricing for your business?", wantsRegistration: false };

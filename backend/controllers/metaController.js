@@ -59,6 +59,12 @@ const renderRegistrationPage = (conversation, error = "") => `<!doctype html><ht
 const renderCompletePage = (alreadySubmitted = false) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Registration Submitted</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Arial,sans-serif;background:#f6f7f9;color:#17202a}main{width:min(560px,calc(100% - 32px));padding:28px;box-sizing:border-box;background:#fff;border:1px solid #dfe3e8;border-radius:8px;text-align:center}</style></head><body><main><h1>${alreadySubmitted ? "Registration already submitted" : "Registration submitted"}</h1><p>${alreadySubmitted ? "We already have your details. Our team will contact you soon." : "Thank you. We have received your details and our team will contact you soon."}</p></main></body></html>`;
 
 const sendRegistrationLink = async (req, conversation, initialMessage) => {
+  const hasActiveRegistrationLink =
+    conversation.registration_status === "pending" &&
+    conversation.registration_token_hash &&
+    new Date(conversation.registration_expires_at).getTime() > Date.now();
+  if (hasActiveRegistrationLink) return;
+
   const registration = await conversationService.createRegistration(conversation, initialMessage);
   const link = `${publicBaseUrl(req)}/register/${registration.token}`;
   const text = `Thanks for messaging us. Please complete this registration form so our team can help you: ${link}`;
