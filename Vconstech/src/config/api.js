@@ -1,7 +1,10 @@
 const configuredApiUrl = import.meta.env.VITE_API_URL || "";
+const fallbackApiUrl = import.meta.env.DEV
+  ? "http://127.0.0.1:5001"
+  : "https://vconstech-crm-new.onrender.com";
 
 export const API_BASE_URL = (
-  configuredApiUrl || "https://vconstech-crm-new.onrender.com"
+  configuredApiUrl || fallbackApiUrl
 )
   .trim()
   .replace(/\/$/, "");
