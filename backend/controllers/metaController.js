@@ -38,18 +38,11 @@ const placeholderEmail = (channel, channelUserId) => {
   return `${channel.toLowerCase()}-${localPart}@meta.lead`;
 };
 
-const syncSocialLeadProfile = async ({ channel, channelUserId, leadId, username }) => {
-  const socialIdColumn = channel === "Facebook" ? "facebook_id" : channel === "Instagram" ? "instagram_id" : null;
-  if (!socialIdColumn || !leadId || !channelUserId) return;
+const syncSocialLeadUsername = async ({ channel, leadId, username }) => {
+  const usernameColumn = channel === "Facebook" ? "facebook_username" : channel === "Instagram" ? "instagram_username" : null;
+  if (!usernameColumn || !leadId || !username) return;
 
-  const assignments = [`${socialIdColumn} = $1`];
-  const params = [channelUserId];
-  if (channel === "Instagram" && username) {
-    assignments.push(`instagram_username = $${params.length + 1}`);
-    params.push(username);
-  }
-  params.push(leadId);
-  await pool.query(`UPDATE leads SET ${assignments.join(", ")} WHERE id = $${params.length}`, params);
+  await pool.query(`UPDATE leads SET ${usernameColumn} = $1 WHERE id = $2`, [username, leadId]);
 };
 
 const createInboundCrmLead = async (conversation) => {
@@ -94,7 +87,7 @@ const handleInboundMessage = async (req, { channel, channelUserId, fullName, pho
   const conversation = await conversationService.getOrCreateConversation({ channel, channelUserId, fullName, phoneRaw, username });
   const isExistingLead = Boolean(conversation.lead_id);
   const leadId = await createInboundCrmLead(conversation);
-  await syncSocialLeadProfile({ channel, channelUserId, leadId, username: conversation.channel_username });
+  await syncSocialLeadUsername({ channel, leadId, username: conversation.channel_username });
   await conversationService.saveMessage({ conversationId: conversation.id, direction: "in", text });
 
   if (isExistingLead) {
@@ -138,7 +131,13 @@ const receiveWebhook = async (req, res) => {
           console.error("Meta profile lookup failed:", error.response?.data || error.message);
         }
         const fullName = profile?.fullName || (channel === "Facebook" ? "Facebook User" : "Instagram User");
-        await handleInboundMessage(req, { channel, channelUserId, fullName, text: event.message.text || "", username: profile?.username || null });
+        await handleInboundMessage(req, {
+          channel,
+          channelUserId,
+          fullName,
+          text: event.message.text || "",
+          username: event.sender?.username || profile?.username || null,
+        });
       }
     }
     if (body.object === "whatsapp_business_account") {

@@ -20,29 +20,14 @@ const ensureMergeSchema = async () => {
       ADD COLUMN IF NOT EXISTS reminder_enabled boolean DEFAULT true,
       ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_at timestamp without time zone,
       ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_for_date date,
-      ADD COLUMN IF NOT EXISTS facebook_id text,
-      ADD COLUMN IF NOT EXISTS instagram_id text,
+      ADD COLUMN IF NOT EXISTS facebook_username text,
       ADD COLUMN IF NOT EXISTS instagram_username text
   `);
 
   await pool.query(`
-    UPDATE leads AS lead
-    SET instagram_id = conversation.channel_user_id
-    FROM meta_conversations AS conversation
-    WHERE conversation.lead_id = lead.id
-      AND conversation.channel = 'Instagram'
-      AND conversation.channel_user_id IS NOT NULL
-      AND lead.instagram_id IS DISTINCT FROM conversation.channel_user_id
-  `);
-
-  await pool.query(`
-    UPDATE leads AS lead
-    SET facebook_id = conversation.channel_user_id
-    FROM meta_conversations AS conversation
-    WHERE conversation.lead_id = lead.id
-      AND conversation.channel = 'Facebook'
-      AND conversation.channel_user_id IS NOT NULL
-      AND lead.facebook_id IS DISTINCT FROM conversation.channel_user_id
+    ALTER TABLE IF EXISTS leads
+      DROP COLUMN IF EXISTS facebook_id,
+      DROP COLUMN IF EXISTS instagram_id
   `);
 
   await pool.query(`
