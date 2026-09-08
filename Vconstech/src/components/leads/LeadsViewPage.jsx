@@ -119,13 +119,11 @@ export default function LeadDetails({ lead, onClose }) {
                 <span className="text-gray-500">Channel</span>
                 <span className="font-medium text-gray-800 capitalize">{lead.channel}</span>
               </div>
-              {(lead.facebook_id || lead.instagram_id) && (
+              {lead.instagram_username && (
                 <div className="flex justify-between gap-4 border-b pb-3">
-                  <span className="text-gray-500">
-                    {lead.instagram_id ? "Instagram ID" : "Facebook ID"}
-                  </span>
+                  <span className="text-gray-500">Instagram Username</span>
                   <span className="break-all text-right font-medium text-gray-800">
-                    {lead.instagram_id || lead.facebook_id}
+                    @{String(lead.instagram_username).replace(/^@/, "")}
                   </span>
                 </div>
               )}

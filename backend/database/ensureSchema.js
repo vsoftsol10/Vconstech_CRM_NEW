@@ -21,7 +21,8 @@ const ensureMergeSchema = async () => {
       ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_at timestamp without time zone,
       ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_for_date date,
       ADD COLUMN IF NOT EXISTS facebook_id text,
-      ADD COLUMN IF NOT EXISTS instagram_id text
+      ADD COLUMN IF NOT EXISTS instagram_id text,
+      ADD COLUMN IF NOT EXISTS instagram_username text
   `);
 
   await pool.query(`
@@ -293,6 +294,7 @@ const ensureMergeSchema = async () => {
       channel_user_id text NOT NULL,
       full_name text NULL,
       phone_raw text NULL,
+      channel_username text NULL,
       lead_id bigint NULL,
       registration_status text NOT NULL DEFAULT 'pending',
       registration_token_hash text NULL,
@@ -303,6 +305,11 @@ const ensureMergeSchema = async () => {
       updated_at timestamp without time zone DEFAULT NOW(),
       UNIQUE (channel, channel_user_id)
     )
+  `);
+
+  await pool.query(`
+    ALTER TABLE IF EXISTS meta_conversations
+      ADD COLUMN IF NOT EXISTS channel_username text
   `);
 
   await pool.query(`

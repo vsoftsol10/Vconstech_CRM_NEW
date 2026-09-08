@@ -4,16 +4,17 @@ const pool = require("../config/database");
 const REGISTRATION_LINK_TTL_DAYS = 30;
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
-const getOrCreateConversation = async ({ channel, channelUserId, fullName, phoneRaw }) => {
+const getOrCreateConversation = async ({ channel, channelUserId, fullName, phoneRaw, username }) => {
   const result = await pool.query(
-    `INSERT INTO meta_conversations (channel, channel_user_id, full_name, phone_raw)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO meta_conversations (channel, channel_user_id, full_name, phone_raw, channel_username)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (channel, channel_user_id) DO UPDATE
        SET full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), meta_conversations.full_name),
            phone_raw = COALESCE(NULLIF(EXCLUDED.phone_raw, ''), meta_conversations.phone_raw),
+           channel_username = COALESCE(NULLIF(EXCLUDED.channel_username, ''), meta_conversations.channel_username),
            updated_at = NOW()
      RETURNING *`,
-    [channel, channelUserId, fullName || null, phoneRaw || null]
+    [channel, channelUserId, fullName || null, phoneRaw || null, username || null]
   );
   return result.rows[0];
 };

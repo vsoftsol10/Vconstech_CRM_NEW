@@ -17,7 +17,8 @@ ALTER TABLE IF EXISTS leads
   ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_at timestamp without time zone,
   ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_for_date date,
   ADD COLUMN IF NOT EXISTS facebook_id text,
-  ADD COLUMN IF NOT EXISTS instagram_id text;
+  ADD COLUMN IF NOT EXISTS instagram_id text,
+  ADD COLUMN IF NOT EXISTS instagram_username text;
 
 ALTER TABLE IF EXISTS customers
   ADD COLUMN IF NOT EXISTS erp_customer_id text,
@@ -196,6 +197,7 @@ CREATE TABLE IF NOT EXISTS meta_conversations (
   channel_user_id text NOT NULL,
   full_name text NULL,
   phone_raw text NULL,
+  channel_username text NULL,
   lead_id bigint NULL,
   registration_status text NOT NULL DEFAULT 'pending',
   registration_token_hash text NULL,
@@ -206,6 +208,9 @@ CREATE TABLE IF NOT EXISTS meta_conversations (
   updated_at timestamp without time zone DEFAULT NOW(),
   UNIQUE (channel, channel_user_id)
 );
+
+ALTER TABLE IF EXISTS meta_conversations
+  ADD COLUMN IF NOT EXISTS channel_username text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS meta_conversations_registration_token_unique
 ON meta_conversations (registration_token_hash)

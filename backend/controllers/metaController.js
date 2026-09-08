@@ -1,7 +1,7 @@
 const pool = require("../config/database");
 const { createLeadRecord } = require("./leadController");
 const { fallbackReply, generateSalesReply } = require("../services/metaAiReplyService");
-const { sendMetaMessage } = require("../services/metaMessagingService");
+const { getMetaUserProfile, sendMetaMessage } = require("../services/metaMessagingService");
 const conversationService = require("../services/metaConversationService");
 
 const processedMessages = new Map();
@@ -38,11 +38,18 @@ const placeholderEmail = (channel, channelUserId) => {
   return `${channel.toLowerCase()}-${localPart}@meta.lead`;
 };
 
-const syncSocialLeadId = async ({ channel, channelUserId, leadId }) => {
+const syncSocialLeadProfile = async ({ channel, channelUserId, leadId, username }) => {
   const socialIdColumn = channel === "Facebook" ? "facebook_id" : channel === "Instagram" ? "instagram_id" : null;
   if (!socialIdColumn || !leadId || !channelUserId) return;
 
-  await pool.query(`UPDATE leads SET ${socialIdColumn} = $1 WHERE id = $2`, [channelUserId, leadId]);
+  const assignments = [`${socialIdColumn} = $1`];
+  const params = [channelUserId];
+  if (channel === "Instagram" && username) {
+    assignments.push(`instagram_username = $${params.length + 1}`);
+    params.push(username);
+  }
+  params.push(leadId);
+  await pool.query(`UPDATE leads SET ${assignments.join(", ")} WHERE id = $${params.length}`, params);
 };
 
 const createInboundCrmLead = async (conversation) => {
@@ -82,12 +89,12 @@ const sendRegistrationLink = async (req, conversation, initialMessage) => {
   await conversationService.saveMessage({ conversationId: conversation.id, direction: "out", text });
 };
 
-const handleInboundMessage = async (req, { channel, channelUserId, fullName, phoneRaw, text }) => {
+const handleInboundMessage = async (req, { channel, channelUserId, fullName, phoneRaw, text, username }) => {
   if (!text.trim()) return;
-  const conversation = await conversationService.getOrCreateConversation({ channel, channelUserId, fullName, phoneRaw });
+  const conversation = await conversationService.getOrCreateConversation({ channel, channelUserId, fullName, phoneRaw, username });
   const isExistingLead = Boolean(conversation.lead_id);
   const leadId = await createInboundCrmLead(conversation);
-  await syncSocialLeadId({ channel, channelUserId, leadId });
+  await syncSocialLeadProfile({ channel, channelUserId, leadId, username: conversation.channel_username });
   await conversationService.saveMessage({ conversationId: conversation.id, direction: "in", text });
 
   if (isExistingLead) {
@@ -124,8 +131,14 @@ const receiveWebhook = async (req, res) => {
         if (event.message?.is_echo || !event.message || isDuplicateMessage(event.message.mid)) continue;
         const channelUserId = event.sender?.id;
         if (!channelUserId) continue;
-        const fullName = channel === "Facebook" ? "Facebook User" : "Instagram User";
-        await handleInboundMessage(req, { channel, channelUserId, fullName, text: event.message.text || "" });
+        let profile = null;
+        try {
+          profile = await getMetaUserProfile({ channel, channelUserId });
+        } catch (error) {
+          console.error("Meta profile lookup failed:", error.response?.data || error.message);
+        }
+        const fullName = profile?.fullName || (channel === "Facebook" ? "Facebook User" : "Instagram User");
+        await handleInboundMessage(req, { channel, channelUserId, fullName, text: event.message.text || "", username: profile?.username || null });
       }
     }
     if (body.object === "whatsapp_business_account") {
