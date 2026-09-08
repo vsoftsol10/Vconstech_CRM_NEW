@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Select from "react-select";
 import { FiX, FiClipboard } from "react-icons/fi";
@@ -139,23 +139,44 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
     assignedTo: null, address: "", location: "", requirements: "", workNotes: "",
   });
   const [showWorkUpdate, setShowWorkUpdate] = useState(false);
-  const [salesMembers, setSalesMembers]     = useState([]);
+  const [assignableMembers, setAssignableMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [memberLoadError, setMemberLoadError] = useState("");
   const [errors, setErrors]                 = useState({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting]         = useState(false);
   const channelOptions = withSelectedOption(CHANNELS, form.channel);
 
-  // Load sales team members
+  const assignmentOptions = useMemo(
+    () => ["Sales", "Marketing"]
+      .map((department) => ({
+        label: `${department} Team`,
+        options: assignableMembers.filter((member) => member.department === department),
+      }))
+      .filter((group) => group.options.length > 0),
+    [assignableMembers]
+  );
+
   useEffect(() => {
     const loadMembers = async () => {
+      setLoadingMembers(true);
+      setMemberLoadError("");
       try {
         const res = await axios.get(`${API_BASE_URL}/api/team`);
-        const options = res.data
-          .filter(m => m.department?.toLowerCase() === "sales")
-          .map(m => ({ value: m.id, label: m.name }));
-        setSalesMembers(options);
+        const members = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        const options = members
+          .filter((member) => ["sales", "marketing"].includes(String(member.department || "").toLowerCase()))
+          .map((member) => ({
+            value: member.id,
+            label: `${member.name || "Unnamed"} (${member.employee_id || "No employee ID"})`,
+            department: String(member.department || "").trim().replace(/^./, (letter) => letter.toUpperCase()),
+          }));
+        setAssignableMembers(options);
       } catch (err) {
         console.error(err);
+        setMemberLoadError("Unable to load Sales and Marketing team members.");
+      } finally {
+        setLoadingMembers(false);
       }
     };
     loadMembers();
@@ -163,14 +184,14 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
 
   // Populate form when editing — runs after salesMembers are loaded
   useEffect(() => {
-    if (editData && salesMembers.length >= 0) {
+    if (editData) {
       setForm({
         fullName:     editData.full_name    || "",
         company:      editData.company      || "",
         channel:      toSelectOption(CHANNELS, editData.channel),
         status:       toSelectOption(STATUSES, editData.status),
         plan:         toSelectOption(PLANS, editData.plan),
-        assignedTo:   salesMembers.find(m => String(m.value)   === String(editData.assigned_to))           || null,
+        assignedTo:   assignableMembers.find(m => String(m.value) === String(editData.assigned_to)) || null,
         workNotes:    editData.work_notes   || "",
         phone:        editData.phone        || "",
         email:        editData.email        || "",
@@ -180,7 +201,7 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
         requirements: editData.requirements || "",
       });
     }
-  }, [editData, salesMembers]);
+  }, [editData, assignableMembers]);
 
   // Close on Escape key
   useEffect(() => {
@@ -424,8 +445,17 @@ setFormError("");
             {/* Row 5 */}
             <Field label="Assign To" error={errors.assignedTo}>
               {/* FIX: use setSelect directly — no .value extraction here */}
-              <Select styles={selectStyles(errors.assignedTo)} placeholder="Assign sales member"
-                value={form.assignedTo} onChange={setSelect("assignedTo")} options={salesMembers} />
+              <Select
+                styles={selectStyles(errors.assignedTo)}
+                placeholder="Select Sales or Marketing member"
+                value={form.assignedTo}
+                onChange={setSelect("assignedTo")}
+                options={assignmentOptions}
+                isLoading={loadingMembers}
+                isDisabled={loadingMembers || Boolean(memberLoadError)}
+                noOptionsMessage={() => "No Sales or Marketing team members found"}
+              />
+              {memberLoadError && <p className="mt-1 text-[11px] text-red-400">{memberLoadError}</p>}
             </Field>
 
            
@@ -518,7 +548,7 @@ setFormError("");
   leadId={editData?.id}
   leadData={{
     ...editData,
-    assigned_to_name: salesMembers.find(
+    assigned_to_name: assignableMembers.find(
       m => String(m.value) === String(editData?.assigned_to)
     )?.label
   }}

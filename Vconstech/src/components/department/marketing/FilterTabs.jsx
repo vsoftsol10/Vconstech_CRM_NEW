@@ -29,10 +29,7 @@ const FilterTabs = ({ activeTab, setActiveTab, channels = [] }) => {
         ))}
       </div>
 
-      <button className="flex items-center gap-2 h-[40px] px-5 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all duration-300">
-        <FiSliders className="text-base" />
-        Channels
-      </button>
+      
     </div>
   );
 };

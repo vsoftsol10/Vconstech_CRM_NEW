@@ -404,10 +404,19 @@ const getAllLeads = async (req, res) => {
     const query = `
       SELECT
         l.*,
+        assignment_lookup.employee_id AS assigned_employee_id,
         customer_lookup.id AS customer_id,
         customer_lookup.erp_customer_id,
         customer_lookup.id IS NOT NULL AS is_customer
       FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT tm.employee_id
+        FROM team_members tm
+        WHERE tm.id::text = l.assigned_to::text
+           OR tm.employee_id::text = l.assigned_to::text
+        ORDER BY CASE WHEN tm.id::text = l.assigned_to::text THEN 0 ELSE 1 END
+        LIMIT 1
+      ) assignment_lookup ON true
       LEFT JOIN LATERAL (
         SELECT c.id, c.erp_customer_id
         FROM customers c
@@ -435,10 +444,19 @@ const getLeadById = async (req, res) => {
     const result = await pool.query(
       `SELECT
         l.*,
+        assignment_lookup.employee_id AS assigned_employee_id,
         customer_lookup.id AS customer_id,
         customer_lookup.erp_customer_id,
         customer_lookup.id IS NOT NULL AS is_customer
        FROM leads l
+       LEFT JOIN LATERAL (
+         SELECT tm.employee_id
+         FROM team_members tm
+         WHERE tm.id::text = l.assigned_to::text
+            OR tm.employee_id::text = l.assigned_to::text
+         ORDER BY CASE WHEN tm.id::text = l.assigned_to::text THEN 0 ELSE 1 END
+         LIMIT 1
+       ) assignment_lookup ON true
        LEFT JOIN LATERAL (
          SELECT c.id, c.erp_customer_id
          FROM customers c

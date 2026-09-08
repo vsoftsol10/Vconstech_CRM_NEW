@@ -119,6 +119,12 @@ export default function LeadDetails({ lead, onClose }) {
                 <span className="text-gray-500">Channel</span>
                 <span className="font-medium text-gray-800 capitalize">{lead.channel}</span>
               </div>
+              <div className="flex justify-between gap-4 border-b pb-3">
+                <span className="text-gray-500">Assigned Employee ID</span>
+                <span className="text-right font-medium text-gray-800">
+                  {lead.assigned_employee_id || "Unassigned"}
+                </span>
+              </div>
               {(lead.instagram_username || lead.facebook_username) && (
                 <div className="flex justify-between gap-4 border-b pb-3">
                   <span className="text-gray-500">
