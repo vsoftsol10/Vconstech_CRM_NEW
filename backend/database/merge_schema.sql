@@ -15,7 +15,9 @@ ALTER TABLE IF EXISTS leads
   ADD COLUMN IF NOT EXISTS follow_up_time time without time zone,
   ADD COLUMN IF NOT EXISTS reminder_enabled boolean DEFAULT true,
   ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_at timestamp without time zone,
-  ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_for_date date;
+  ADD COLUMN IF NOT EXISTS follow_up_reminder_sent_for_date date,
+  ADD COLUMN IF NOT EXISTS facebook_id text,
+  ADD COLUMN IF NOT EXISTS instagram_id text;
 
 ALTER TABLE IF EXISTS customers
   ADD COLUMN IF NOT EXISTS erp_customer_id text,

@@ -119,6 +119,16 @@ export default function LeadDetails({ lead, onClose }) {
                 <span className="text-gray-500">Channel</span>
                 <span className="font-medium text-gray-800 capitalize">{lead.channel}</span>
               </div>
+              {(lead.facebook_id || lead.instagram_id) && (
+                <div className="flex justify-between gap-4 border-b pb-3">
+                  <span className="text-gray-500">
+                    {lead.instagram_id ? "Instagram ID" : "Facebook ID"}
+                  </span>
+                  <span className="break-all text-right font-medium text-gray-800">
+                    {lead.instagram_id || lead.facebook_id}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between border-b pb-3">
                 <span className="text-gray-500">Status</span>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${statusColors[lead.status] || "bg-yellow-100 text-yellow-700"}`}>

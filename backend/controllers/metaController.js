@@ -6,6 +6,7 @@ const conversationService = require("../services/metaConversationService");
 
 const processedMessages = new Map();
 const DEDUPLICATION_TTL_MS = 10 * 60 * 1000;
+const EXISTING_LEAD_REPLY = "We received your message. Our team will contact you soon.";
 
 const isDuplicateMessage = (messageId) => {
   if (!messageId) return false;
@@ -37,6 +38,13 @@ const placeholderEmail = (channel, channelUserId) => {
   return `${channel.toLowerCase()}-${localPart}@meta.lead`;
 };
 
+const syncSocialLeadId = async ({ channel, channelUserId, leadId }) => {
+  const socialIdColumn = channel === "Facebook" ? "facebook_id" : channel === "Instagram" ? "instagram_id" : null;
+  if (!socialIdColumn || !leadId || !channelUserId) return;
+
+  await pool.query(`UPDATE leads SET ${socialIdColumn} = $1 WHERE id = $2`, [channelUserId, leadId]);
+};
+
 const createInboundCrmLead = async (conversation) => {
   if (conversation.lead_id) return conversation.lead_id;
 
@@ -51,7 +59,9 @@ const createInboundCrmLead = async (conversation) => {
     date: new Date().toISOString().slice(0, 10),
   });
   const leadId = result.body.lead?.id || result.body.leadId;
-  if (leadId) await conversationService.linkLead({ conversationId: conversation.id, leadId });
+  if (leadId) {
+    await conversationService.linkLead({ conversationId: conversation.id, leadId });
+  }
   return leadId || null;
 };
 
@@ -75,8 +85,17 @@ const sendRegistrationLink = async (req, conversation, initialMessage) => {
 const handleInboundMessage = async (req, { channel, channelUserId, fullName, phoneRaw, text }) => {
   if (!text.trim()) return;
   const conversation = await conversationService.getOrCreateConversation({ channel, channelUserId, fullName, phoneRaw });
-  await createInboundCrmLead(conversation);
+  const isExistingLead = Boolean(conversation.lead_id);
+  const leadId = await createInboundCrmLead(conversation);
+  await syncSocialLeadId({ channel, channelUserId, leadId });
   await conversationService.saveMessage({ conversationId: conversation.id, direction: "in", text });
+
+  if (isExistingLead) {
+    await sendMetaMessage({ channel, channelUserId, text: EXISTING_LEAD_REPLY });
+    await conversationService.saveMessage({ conversationId: conversation.id, direction: "out", text: EXISTING_LEAD_REPLY });
+    return;
+  }
+
   const messages = await conversationService.getMessages(conversation.id);
   let aiReply;
   try {

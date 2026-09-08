@@ -8,7 +8,7 @@ import MarketingLeadTable from "../../components/department/marketing/MarketingL
 import AddLeadModal from "../../components/leads/AddleadForm";
 import LeadDetails from "../../components/leads/LeadsViewPage";
 
-const MARKETING_CHANNELS = ["Whatsapp", "Facebook", "Website", "Email"];
+const MARKETING_CHANNELS = ["Whatsapp", "Facebook", "Website", "Email","Instagram"];
 const VIEW_MODES = ["Table", "Cards"];
 
 const normalizeChannel = (value) => {
