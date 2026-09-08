@@ -104,7 +104,7 @@ const sendWelcomeEmail = async (name, email, employeeId, autoPassword) => {
 
 <p>
   <a
-    href="https://crm.thevsoft.com/"
+    href="https://crm.vconstech.in/"
     style="
       background:#2563eb;
       color:#ffffff;
@@ -150,7 +150,7 @@ const sendWelcomeEmail = async (name, email, employeeId, autoPassword) => {
 // ── Send Password Reset Email ───────────────────────────────────────────────
 const sendPasswordResetEmail = async (email, resetToken) => {
   try {
-    const resetLink = `https://crm.thevsoft.com/reset-password/${resetToken}`;
+    const resetLink = `https://crm.vconstech.in/reset-password/${resetToken}`;
 
     await sendMailWithLogging({
       from: getSender(),
