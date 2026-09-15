@@ -19,7 +19,11 @@ const isDuplicateMessage = (messageId) => {
   return false;
 };
 
-const publicBaseUrl = (req) => (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+const publicBaseUrl = (req) => {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  return `${forwardedProtocol || req.protocol}://${req.get("host")}`.replace(/\/$/, "");
+};
 const escapeHtml = (value) => String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -85,7 +89,9 @@ const sendRegistrationLink = async (req, conversation, initialMessage) => {
 const handleInboundMessage = async (req, { channel, channelUserId, fullName, phoneRaw, text, username }) => {
   if (!text.trim()) return;
   const conversation = await conversationService.getOrCreateConversation({ channel, channelUserId, fullName, phoneRaw, username });
-  const isExistingLead = Boolean(conversation.lead_id);
+  // A lead record is created before the registration form is completed. It is
+  // not an existing customer conversation until that registration is complete.
+  const isExistingLead = Boolean(conversation.lead_id) && conversation.registration_status === "completed";
   const leadId = await createInboundCrmLead(conversation);
   await syncSocialLeadUsername({ channel, leadId, username: conversation.channel_username });
   await conversationService.saveMessage({ conversationId: conversation.id, direction: "in", text });

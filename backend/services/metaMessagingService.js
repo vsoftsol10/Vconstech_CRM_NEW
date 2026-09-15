@@ -17,10 +17,13 @@ const getMetaUserProfile = async ({ channel, channelUserId }) => {
     ? process.env.INSTAGRAM_ACCESS_TOKEN || process.env.PAGE_ACCESS_TOKEN
     : process.env.PAGE_ACCESS_TOKEN;
   if (!accessToken) return null;
+  const graphHost = channel === "Instagram" && process.env.INSTAGRAM_ACCESS_TOKEN
+    ? "https://graph.instagram.com"
+    : "https://graph.facebook.com";
 
   let response;
   try {
-    response = await axios.get(`https://graph.facebook.com/v20.0/${channelUserId}`, {
+    response = await axios.get(`${graphHost}/v20.0/${channelUserId}`, {
       params: { fields, access_token: accessToken },
     });
   } catch (error) {
@@ -49,14 +52,39 @@ const sendMetaMessage = async ({ channel, channelUserId, text }) => {
     );
   }
 
-  if (channel === "Facebook" || channel === "Instagram") {
+  if (channel === "Facebook") {
     return axios.post(
       "https://graph.facebook.com/v20.0/me/messages",
       {
         recipient: { id: channelUserId },
         message: { text },
-        ...(channel === "Facebook" ? { messaging_type: "RESPONSE" } : {}),
+        messaging_type: "RESPONSE",
       },
+      { params: { access_token: process.env.PAGE_ACCESS_TOKEN } }
+    );
+  }
+
+  if (channel === "Instagram") {
+    const instagramAccessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+    const message = {
+      recipient: { id: channelUserId },
+      message: { text },
+    };
+
+    // Instagram Login uses its own Graph host and an access token issued to
+    // the connected Instagram professional account. Keep the Page-token path
+    // as a fallback for existing Facebook Login integrations.
+    if (instagramAccessToken) {
+      return axios.post(
+        "https://graph.instagram.com/v20.0/me/messages",
+        message,
+        { headers: { Authorization: `Bearer ${instagramAccessToken}` } }
+      );
+    }
+
+    return axios.post(
+      "https://graph.facebook.com/v20.0/me/messages",
+      message,
       { params: { access_token: process.env.PAGE_ACCESS_TOKEN } }
     );
   }
