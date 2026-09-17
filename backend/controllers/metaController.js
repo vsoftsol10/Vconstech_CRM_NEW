@@ -112,7 +112,15 @@ const handleInboundMessage = async (req, { channel, channelUserId, fullName, pho
   }
   await sendMetaMessage({ channel, channelUserId, text: aiReply.reply });
   await conversationService.saveMessage({ conversationId: conversation.id, direction: "out", text: aiReply.reply });
-  if (aiReply.wantsRegistration) await sendRegistrationLink(req, conversation, text);
+  // Send one registration link immediately for every new social conversation.
+  // The pending status created by sendRegistrationLink prevents repeat links
+  // when the person sends additional messages before completing the form.
+  const isNewSocialConversation =
+    (channel === "Facebook" || channel === "Instagram") &&
+    !conversation.registration_status;
+  if (aiReply.wantsRegistration || isNewSocialConversation) {
+    await sendRegistrationLink(req, conversation, text);
+  }
 };
 
 const verifyWebhook = (req, res) => {
