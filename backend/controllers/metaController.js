@@ -69,7 +69,7 @@ const createInboundCrmLead = async (conversation) => {
   return leadId || null;
 };
 
-const renderRegistrationPage = (conversation, error = "") => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lead Registration</title><style>body{margin:0;font-family:Arial,sans-serif;background:#f6f7f9;color:#17202a}main{max-width:560px;margin:32px auto;padding:24px;background:#fff;border:1px solid #dfe3e8;border-radius:8px}label{display:block;margin-top:14px;font-weight:700}input,textarea{box-sizing:border-box;width:100%;margin-top:6px;padding:11px;border:1px solid #c9d1d9;border-radius:6px;font-size:15px}textarea{min-height:92px}button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:#1769aa;color:#fff;font-size:16px;font-weight:700}.error{padding:10px;color:#8a1f11;background:#fff0ed;border:1px solid #ffc9bf;border-radius:6px}</style></head><body><main><h1>Registration Form</h1>${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}<form method="post"><label>Full name<input name="fullName" value="${escapeHtml(conversation.full_name === "Unknown" ? "" : conversation.full_name)}" required></label><label>Company<input name="company" required></label><label>Mobile number<input name="phone" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required></label><label>Email<input name="email" type="email" required></label><label>Requirements<textarea name="requirements" placeholder="Tell us what you need"></textarea></label><button type="submit">Submit</button></form></main></body></html>`;
+const renderRegistrationPage = (conversation, error = "") => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lead Registration</title><style>body{margin:0;font-family:Arial,sans-serif;background:#f6f7f9;color:#17202a}main{max-width:560px;margin:32px auto;padding:24px;background:#fff;border:1px solid #dfe3e8;border-radius:8px}label{display:block;margin-top:14px;font-weight:700}input,textarea{box-sizing:border-box;width:100%;margin-top:6px;padding:11px;border:1px solid #c9d1d9;border-radius:6px;font-size:15px}textarea{min-height:92px}button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:#1769aa;color:#fff;font-size:16px;font-weight:700}.error{padding:10px;color:#8a1f11;background:#fff0ed;border:1px solid #ffc9bf;border-radius:6px}</style></head><body><main><h1>Registration Form</h1>${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}<form method="post"><label>Full name<input name="fullName" value="${escapeHtml(conversation.full_name === "Unknown" ? "" : conversation.full_name)}" required></label><label>Company<input name="company" required></label><label>Mobile number<input name="phone" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required></label><label>Email (optional)<input name="email" type="email"></label><label>Requirements<textarea name="requirements" placeholder="Tell us what you need" required></textarea></label><button type="submit">Submit</button></form></main></body></html>`;
 const renderCompletePage = (alreadySubmitted = false) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Registration Submitted</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Arial,sans-serif;background:#f6f7f9;color:#17202a}main{width:min(560px,calc(100% - 32px));padding:28px;box-sizing:border-box;background:#fff;border:1px solid #dfe3e8;border-radius:8px;text-align:center}</style></head><body><main><h1>${alreadySubmitted ? "Registration already submitted" : "Registration submitted"}</h1><p>${alreadySubmitted ? "We already have your details. Our team will contact you soon." : "Thank you. We have received your details and our team will contact you soon."}</p></main></body></html>`;
 
 const sendRegistrationLink = async (req, conversation, initialMessage) => {
@@ -184,20 +184,22 @@ const submitRegistrationForm = async (req, res) => {
   const fullName = String(req.body.fullName || "").trim();
   const company = String(req.body.company || "").trim();
   const email = String(req.body.email || "").trim().toLowerCase();
-  if (fullName.length < 3 || !company || !emailPattern.test(email)) {
-    return res.status(400).type("html").send(renderRegistrationPage(conversation, "Enter a valid name, company, and email address."));
+  const requirements = String(req.body.requirements || "").trim();
+  if (fullName.length < 3 || !company || !requirements || (email && !emailPattern.test(email))) {
+    return res.status(400).type("html").send(renderRegistrationPage(conversation, "Enter a valid name, company, mobile number, and requirements. Email is optional."));
   }
   try {
     let leadId = conversation.lead_id;
     if (leadId) {
       const result = await pool.query(
-        `UPDATE leads SET full_name = $1, company = $2, phone = $3, email = $4, requirements = $5 WHERE id = $6 RETURNING id`,
-        [fullName, company, phone, email, String(req.body.requirements || "").trim() || null, leadId]
+        `UPDATE leads SET full_name = $1, company = $2, phone = $3,
+         email = COALESCE(NULLIF($4, ''), email), requirements = $5 WHERE id = $6 RETURNING id`,
+        [fullName, company, phone, email, requirements, leadId]
       );
       leadId = result.rows[0]?.id || null;
     }
     if (!leadId) {
-      const result = await createLeadRecord({ fullName, company, phone, email, requirements: req.body.requirements, channel: conversation.channel, status: "new", date: new Date().toISOString().slice(0, 10) });
+      const result = await createLeadRecord({ fullName, company, phone, email: email || placeholderEmail(conversation.channel, conversation.channel_user_id), requirements, channel: conversation.channel, status: "new", date: new Date().toISOString().slice(0, 10) });
       leadId = result.body.lead?.id || result.body.leadId;
     }
     await conversationService.completeRegistration({ conversationId: conversation.id, leadId });
