@@ -1,4 +1,5 @@
 const transporter = require("../config/email");
+const pool = require("../config/database");
 
 const getSender = () => {
   const email = process.env.SMTP_FROM_EMAIL;
@@ -180,6 +181,42 @@ const sendPasswordResetEmail = async (email, resetToken) => {
 
 const PRICING_URL = "https://vconstech.in/pricing";
 
+const getPlanPricing = async (planName, fallbackAmount, fallbackGstRate) => {
+  const result = await pool.query(
+    `SELECT p.name, p.price,
+            COALESCE((to_jsonb(p)->>'gst_rate')::numeric, 18) AS gst_rate
+     FROM plans p
+     WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [planName || ""]
+  );
+  const plan = result.rows[0];
+  return {
+    name: plan?.name || planName || "N/A",
+    amount: Number(fallbackAmount ?? plan?.price ?? 0),
+    gstRate: Number(fallbackGstRate ?? plan?.gst_rate ?? 18),
+  };
+};
+
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(amount);
+
+const pricingDetails = (pricing) => {
+  if (!Number.isFinite(pricing.amount) || pricing.amount <= 0) {
+    return `<p style="margin:0"><strong>Renewal Price:</strong> Custom pricing — please contact us.</p>`;
+  }
+  const gstAmount = (pricing.amount * pricing.gstRate) / 100;
+  return `
+    <p style="margin:0 0 8px"><strong>Yearly Amount:</strong> ${formatCurrency(pricing.amount)}</p>
+    <p style="margin:0 0 8px"><strong>GST:</strong> ${pricing.gstRate}% (${formatCurrency(gstAmount)})</p>
+    <p style="margin:0"><strong>Total Payable:</strong> ${formatCurrency(pricing.amount + gstAmount)}</p>`;
+};
+
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
+}[char]));
+
 const formatDisplayDate = (date) => {
   if (!date) return "N/A";
   const parsed = new Date(date);
@@ -207,8 +244,11 @@ const sendSubscriptionReminderEmail = async ({
   companyName,
   plan,
   expiryDate,
+  amount,
+  gstRate,
 }) => {
   if (!email) return { sent: false, reason: "missing_email" };
+  const pricing = await getPlanPricing(plan, amount, gstRate);
 
   await sendMailWithLogging({
     from: getSender(),
@@ -224,8 +264,9 @@ const sendSubscriptionReminderEmail = async ({
         }
         <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:20px 0">
           <p style="margin:0 0 8px"><strong>Company Name:</strong> ${companyName || "N/A"}</p>
-          <p style="margin:0 0 8px"><strong>Current Plan:</strong> ${plan || "N/A"}</p>
-          <p style="margin:0"><strong>Expiry Date:</strong> ${formatDisplayDate(expiryDate)}</p>
+          <p style="margin:0 0 8px"><strong>Current Plan:</strong> ${pricing.name}</p>
+          ${pricingDetails(pricing)}
+          <p style="margin:8px 0 0"><strong>Expiry Date:</strong> ${formatDisplayDate(expiryDate)}</p>
         </div>
         ${renewalButton}
         <p>Best Regards,<br/><strong>Vconstech Team</strong></p>
@@ -236,8 +277,9 @@ const sendSubscriptionReminderEmail = async ({
   return { sent: true };
 };
 
-const sendSubscriptionExpiredEmail = async ({ name, email, companyName }) => {
+const sendSubscriptionExpiredEmail = async ({ name, email, companyName, plan, expiryDate, amount, gstRate }) => {
   if (!email) return { sent: false, reason: "missing_email" };
+  const pricing = await getPlanPricing(plan, amount, gstRate);
 
   await sendMailWithLogging({
     from: getSender(),
@@ -249,11 +291,61 @@ const sendSubscriptionExpiredEmail = async ({ name, email, companyName }) => {
         <p>Your subscription has expired.</p>
         <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:16px;margin:20px 0">
           <p style="margin:0 0 8px"><strong>Company Name:</strong> ${companyName || "N/A"}</p>
-         
+          <p style="margin:0 0 8px"><strong>Plan:</strong> ${pricing.name}</p>
+          ${pricingDetails(pricing)}
+          <p style="margin:0 0 8px"><strong>Expired On:</strong> ${formatDisplayDate(expiryDate)}</p>
           <p style="margin:0">ERP access is now inactive.</p>
         </div>
         <p>Please renew your subscription to reactivate services.</p>
         ${renewalButton}
+        <p>Best Regards,<br/><strong>Vconstech Team</strong></p>
+      </div>
+    `,
+  });
+
+  return { sent: true };
+};
+
+// Temporary credentials are deliberately accepted only for the lifetime of this call.
+// They are never persisted, returned, or logged.
+const sendCustomerCredentialsEmail = async ({ name, email, plan, startDate, expiryDate, customUsers, customProjects }, temporaryPassword) => {
+  if (!email) throw new Error("Customer email is required");
+  const loginUrl = process.env.ERP_LOGIN_URL || "https://erp.vconstech.in/login";
+  const limits = String(plan).toLowerCase() === "advanced"
+    ? `<p><strong>Advanced limits:</strong> ${escapeHtml(customUsers)} engineers, ${escapeHtml(customProjects)} projects</p>` : "";
+  await sendMailWithLogging({
+    from: getSender(), to: email, subject: "Your Vconstech ERP credentials",
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><h2>Welcome to Vconstech ERP</h2><p>Hi <strong>${escapeHtml(name)}</strong>,</p><p><a href="${escapeHtml(loginUrl)}">Open ERP login</a></p><p><strong>Username:</strong> ${escapeHtml(email)}<br/><strong>Temporary password:</strong> ${escapeHtml(temporaryPassword)}<br/><strong>Plan:</strong> ${escapeHtml(plan)}<br/><strong>Start date:</strong> ${escapeHtml(startDate)}<br/><strong>Expiry date:</strong> ${escapeHtml(expiryDate)}</p>${limits}<p>Please change this password at first login. It expires in 7 days.</p></div>`,
+  });
+  return { sent: true };
+};
+
+const sendSubscriptionRenewedEmail = async ({
+  name,
+  email,
+  companyName,
+  plan,
+  amount,
+  gstRate,
+  expiryDate,
+}) => {
+  if (!email) return { sent: false, reason: "missing_email" };
+  const pricing = await getPlanPricing(plan, amount, gstRate);
+
+  await sendMailWithLogging({
+    from: getSender(),
+    to: email,
+    subject: "Your Subscription Has Been Renewed",
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:auto">
+        <p>Hi <strong>${name || "Customer"}</strong>,</p>
+        <p>Your subscription has been renewed successfully.</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin:20px 0">
+          <p style="margin:0 0 8px"><strong>Company Name:</strong> ${companyName || "N/A"}</p>
+          <p style="margin:0 0 8px"><strong>Plan:</strong> ${pricing.name}</p>
+          ${pricingDetails(pricing)}
+          <p style="margin:8px 0 0"><strong>New Expiry Date:</strong> ${formatDisplayDate(expiryDate)}</p>
+        </div>
         <p>Best Regards,<br/><strong>Vconstech Team</strong></p>
       </div>
     `,
@@ -291,6 +383,8 @@ module.exports = {
   sendErpInvitationEmail,
   sendSubscriptionExpiredEmail,
   sendSubscriptionReminderEmail,
+  sendSubscriptionRenewedEmail,
+  sendCustomerCredentialsEmail,
   sendWelcomeEmail,
   sendPasswordResetEmail,
 };

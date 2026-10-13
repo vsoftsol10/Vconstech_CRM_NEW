@@ -1,6 +1,8 @@
 const pool = require("../config/database");
 const { formatDate } = require("../utils/validators");
-const { sendSubscriptionReminderEmail } = require("../utils/emailUtil");
+const { sendSubscriptionReminderEmail, sendSubscriptionRenewedEmail, sendCustomerCredentialsEmail } = require("../utils/emailUtil");
+const { createManualCustomer, syncCustomer, enabled: erpCreationEnabled, normalizeInput, validate, validateFeatureSelection, datesFor, erpResetPassword } = require("../services/manualCustomerService");
+const crypto = require("crypto");
 const {
   calculateSubscriptionDates,
   getPlanForSubscription,
@@ -16,6 +18,7 @@ const {
 } = require("../services/customerService");
 const erpApiClient = require("../integration/services/erpApiClient");
 const erpSupabaseCustomerService = require("../services/erpSupabaseCustomerService");
+const { syncSubscription } = require("../services/erpSubscriptionSyncService");
 
 const sendValidationError = (res, errors) =>
   res.status(400).json({ success: false, message: "Please fix the highlighted fields.", errors });
@@ -23,7 +26,7 @@ const sendValidationError = (res, errors) =>
 const formattedCustomerSelect = `
   id, lead_id, erp_customer_id, customer_name, company_name, phone, email,
   renewal_date >= CURRENT_DATE AS active,
-  subscription_plan, subscription_amount,
+  subscription_plan, subscription_amount, custom_users, custom_projects, custom_price, gst_rate, custom_features, sync_status,
   subscription_start_date, subscription_end_date,
   payment_status, payment_method, assigned_employee, notes, channel,
   reminder_sent,
@@ -56,6 +59,22 @@ const toErpPayload = (body) => ({
 const isErpCustomerId = (id) => String(id || "").startsWith("ERP-CUST-");
 const isNumericCrmId = (id) => /^\d+$/.test(String(id || "").trim());
 
+let expiredAtColumnExists;
+const hasExpiredAtColumn = async () => {
+  if (expiredAtColumnExists !== undefined) return expiredAtColumnExists;
+  const result = await pool.query(
+    `SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'expired_at'
+    ) AS exists`
+  );
+  expiredAtColumnExists = Boolean(result.rows[0]?.exists);
+  if (!expiredAtColumnExists) {
+    console.warn("[Subscription] customers.expired_at is unavailable; deploy the subscription migration to record expiry timestamps.");
+  }
+  return expiredAtColumnExists;
+};
+
 const sendReminderEmailSafely = async (payload) => {
   try {
     return await sendSubscriptionReminderEmail(payload);
@@ -65,15 +84,11 @@ const sendReminderEmailSafely = async (payload) => {
   }
 };
 
-const addDays = (date, days) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
 const getPlanDurationDays = (planName) => {
   const key = normalizePlanKey(planName);
-  return key === "free trial" || key === "trial" || key === "trail" ? 7 : 30;
+  if (key === "free trial" || key === "trial" || key === "trail") return { unit: "days", value: 7 };
+  if (key === "basic" || key === "premium") return { unit: "years", value: 1 };
+  return null; // Advanced is custom/manual and must supply an explicit end date.
 };
 
 const getPlanPrice = async (db, planName) => {
@@ -220,7 +235,10 @@ const updateLocalCustomer = async (id, body) => {
   const planChanged = normalizePlanKey(existing.subscription_plan) !== normalizePlanKey(values.subscription_plan);
   const shouldStartPlan = planChanged || !existing.active;
   const startDate = new Date();
-  const endDate = addDays(startDate, getPlanDurationDays(values.subscription_plan));
+  const fallbackDuration = getPlanDurationDays(values.subscription_plan);
+  const endDate = fallbackDuration
+    ? calculateSubscriptionDates(fallbackDuration, startDate).subscription_end_date
+    : existing.subscription_end_date || existing.renewal_date;
   const planPrice = shouldStartPlan ? await getPlanPrice(pool, values.subscription_plan) : existing.subscription_amount;
 
   const client = await pool.connect();
@@ -326,23 +344,77 @@ const deleteLocalCustomer = async (id) => {
 
 const createCustomer = async (req, res) => {
   try {
-    const erpSupabaseCustomer = erpSupabaseCustomerService.isConfigured()
-      ? await erpSupabaseCustomerService.createCustomer(toErpPayload(req.body))
-      : null;
-    if (erpSupabaseCustomer) {
-      return res.status(201).json({ success: true, customer: erpSupabaseCustomer });
-    }
-
-    const data = await erpApiClient.createCustomer(toErpPayload(req.body));
-    return res.status(201).json({ success: true, customer: unwrapErpCustomer(data) });
+    const result = await createManualCustomer({ db: pool, body: req.body, sendCredentials: credentialsMailer });
+    return res.status(201).json({ success: true, customer: result.customer, message: result.message, erpEnabled: erpCreationEnabled() });
   } catch (err) {
-    console.error(err.message);
-    res.status(err.statusCode || err.status || 502).json({
+    console.error("Manual customer creation failed:", err.message);
+    res.status(err.statusCode || err.status || 500).json({
       success: false,
       message: err.message,
-      details: err.details,
+      errors: err.errors,
     });
   }
+};
+
+const credentialsMailer = (customer, temporaryPassword) => sendCustomerCredentialsEmail({
+  name: customer.customer_name, email: customer.email, plan: customer.subscription_plan,
+  startDate: customer.start_date, expiryDate: customer.renewal_date,
+  customUsers: customer.custom_users, customProjects: customer.custom_projects,
+}, temporaryPassword);
+
+const resyncCustomer = async (req, res) => {
+  try {
+    if (!erpCreationEnabled()) return res.status(409).json({ success: false, message: "ERP creation is disabled. Enable ERP_CREATE_USER_ENABLED to resync." });
+    const found = await pool.query("SELECT * FROM customers WHERE id = $1", [req.params.id]);
+    if (!found.rows[0]) return res.status(404).json({ success: false, message: "Customer not found" });
+    const customer = found.rows[0];
+    if (!['ERP_PENDING', 'ERP_FAILED', 'EMAIL_FAILED'].includes(customer.sync_status)) return res.status(409).json({ success: false, message: "This customer does not need ERP resync." });
+    const result = await syncCustomer({ db: pool, customer, sendCredentials: credentialsMailer });
+    return res.json({ success: true, customer: result.customer, message: result.message });
+  } catch (err) { return res.status(err.status || 500).json({ success: false, message: err.message }); }
+};
+
+const resetCredentials = async (req, res) => {
+  try {
+    if (!erpCreationEnabled()) return res.status(409).json({ success: false, message: "ERP creation is disabled. Enable ERP_CREATE_USER_ENABLED to reset credentials." });
+    const found = await pool.query("SELECT * FROM customers WHERE id = $1", [req.params.id]);
+    const customer = found.rows[0];
+    if (!customer) return res.status(404).json({ success: false, message: "Customer not found" });
+    if (!customer.erp_user_id) return res.status(409).json({ success: false, message: "Customer has no ERP user. Resync the customer first." });
+    const temporaryPassword = crypto.randomBytes(18).toString("base64url");
+    await erpResetPassword(customer.erp_user_id, temporaryPassword);
+    await credentialsMailer(customer, temporaryPassword);
+    await pool.query("UPDATE customers SET sync_status='SYNCED', sync_error=NULL, sync_updated_at=NOW() WHERE id=$1", [customer.id]);
+    return res.json({ success: true, message: "Credentials reset and email sent." });
+  } catch (err) { return res.status(502).json({ success: false, message: "Credentials reset failed: " + err.message }); }
+};
+
+// CRM-only custom plan editor. No ERP request is made from this endpoint.
+const updateCustomPlan = async (req, res) => {
+  try {
+    const found = await pool.query("SELECT * FROM customers WHERE id = $1", [req.params.id]);
+    const previous = found.rows[0];
+    if (!previous) return res.status(404).json({ success: false, message: "Customer not found" });
+    if (normalizePlanKey(previous.subscription_plan) !== "advanced") {
+      return res.status(409).json({ success: false, message: "Custom plans can only be edited for Advanced customers." });
+    }
+    const value = normalizeInput({ ...req.body, subscription_plan: "Advanced" });
+    const errors = validate(value);
+    if (Object.keys(errors).length) return sendValidationError(res, errors);
+    await validateFeatureSelection(pool, value);
+    const { start, end } = datesFor(value);
+    const startDate = require("../services/manualCustomerService").dateOnly(start);
+    const endDate = require("../services/manualCustomerService").dateOnly(end);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const updated = await client.query(`UPDATE customers SET subscription_plan='Advanced', custom_users=$1, custom_projects=$2, custom_price=$3, gst_rate=$4, custom_features=$5::jsonb, subscription_amount=$3, start_date=$6::date, renewal_date=$7::date, subscription_start_date=$6::date, subscription_end_date=$7::date, notes=$8 WHERE id=$9 RETURNING *`, [value.custom_users, value.custom_projects, value.custom_price, value.gst_rate, JSON.stringify(value.custom_features), startDate, endDate, value.notes || null, previous.id]);
+      await client.query(`INSERT INTO subscription_history (customer_id, customer_name, plan_name, amount, action_type, start_date, end_date, metadata) VALUES ($1,$2,'Advanced',$3,'CUSTOM_PLAN_UPDATED',$4::date,$5::date,$6::jsonb)`, [previous.id, previous.customer_name, value.custom_price, startDate, endDate, JSON.stringify({ old: { custom_users: previous.custom_users, custom_projects: previous.custom_projects, custom_price: previous.custom_price, gst_rate: previous.gst_rate, custom_features: previous.custom_features }, new: { custom_users: value.custom_users, custom_projects: value.custom_projects, custom_price: value.custom_price, gst_rate: value.gst_rate, custom_features: value.custom_features } })]);
+      await client.query("COMMIT");
+      const erp = await syncSubscription({ db: pool, customer: updated.rows[0] });
+      return res.json({ success: true, customer: updated.rows[0], message: erp.failed ? "Custom plan updated in CRM, but ERP sync failed." : erp.skipped ? `Custom plan updated in CRM. ${erp.reason}` : "Custom plan updated and ERP synced.", erp });
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+  } catch (error) { return res.status(error.status || 500).json({ success: false, message: error.message, errors: error.errors }); }
 };
 
 const getAllCustomers = async (req, res) => {
@@ -422,7 +494,8 @@ const updateCustomer = async (req, res) => {
   try {
     const localCustomer = await updateLocalCustomer(req.params.id, req.body);
     if (localCustomer) {
-      return res.json({ success: true, customer: localCustomer });
+      const erp = await syncSubscription({ db: pool, customer: localCustomer });
+      return res.json({ success: true, customer: localCustomer, message: erp.failed ? "Customer updated in CRM, but ERP sync failed." : erp.skipped ? `Customer updated in CRM. ${erp.reason}` : "Customer updated and ERP synced.", erp });
     }
 
     const erpSupabaseCustomer = erpSupabaseCustomerService.isConfigured()
@@ -510,7 +583,7 @@ const updateCustomerSubscription = async (req, res) => {
     const endDate =
       toDateOrNull(pickFirst(body.expiryDate, body.endDate, body.renewalDate, body.subscriptionEndDate)) ||
       (!shouldStartPlan ? toDateOrNull(previousEndDate) : null) ||
-      addDays(startDate, plan.durationInDays);
+      calculateSubscriptionDates(plan.durationInDays, startDate).subscription_end_date;
     const companyName = String(pickFirst(body.company_name, body.companyName, getUserCompanyName(currentErpUser), "")).trim();
     const customMembers =
       newPlanForErp === "Advanced"
@@ -744,31 +817,66 @@ const deleteCustomer = async (req, res) => {
   }
 };
 
+const getRenewalDetails = async (id) => {
+  const customer = await pool.query("SELECT * FROM customers WHERE id = $1", [id]);
+  if (customer.rows.length === 0) {
+    const error = new Error("Customer not found");
+    error.status = 404;
+    throw error;
+  }
+  const data = customer.rows[0];
+  const plan = await getPlanForSubscription(pool, data.subscription_plan);
+  const today = new Date();
+  const currentEndDate = toDateOrNull(data.subscription_end_date || data.renewal_date);
+  const termStartDate = currentEndDate && currentEndDate > today ? currentEndDate : today;
+  return {
+    data,
+    plan,
+    subscriptionDates: calculateSubscriptionDates(plan.durationInDays, termStartDate),
+  };
+};
+
+const previewRenewal = async (req, res) => {
+  try {
+    const { data, plan, subscriptionDates } = await getRenewalDetails(req.params.id);
+    return res.json({
+      success: true,
+      preview: {
+        customerName: data.customer_name,
+        plan: plan.name,
+        currentExpiryDate: data.renewal_date,
+        newExpiryDate: subscriptionDates.subscription_end_date,
+      },
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+};
+
 const renewSubscription = async (req, res) => {
   try {
     const { id } = req.params;
-    const customer = await pool.query("SELECT * FROM customers WHERE id = $1", [id]);
+    const { data, plan, subscriptionDates } = await getRenewalDetails(id);
 
-    if (customer.rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Customer not found" });
-    }
-
-    const data = customer.rows[0];
-    const plan = await getPlanForSubscription(pool, data.subscription_plan);
-    const subscriptionDates = calculateSubscriptionDates(plan.durationInDays);
-
-    await pool.query(
+    const clearExpiredAt = await hasExpiredAtColumn() ? ", expired_at = NULL" : "";
+    const updatedCustomer = await pool.query(
       `UPDATE customers
        SET start_date = $1,
            renewal_date = $2,
            subscription_start_date = $3,
-           subscription_end_date = $4
-       WHERE id = $5`,
+           subscription_end_date = $4,
+           subscription_amount = $5,
+           payment_status = 'Subscription Active',
+           subscription_status = 'Subscription Active'
+           ${clearExpiredAt}
+       WHERE id = $6
+       RETURNING *`,
       [
         formatDate(subscriptionDates.subscription_start_date),
         formatDate(subscriptionDates.subscription_end_date),
         subscriptionDates.subscription_start_date,
         subscriptionDates.subscription_end_date,
+        data.custom_price ?? plan.price,
         id,
       ]
     );
@@ -781,17 +889,45 @@ const renewSubscription = async (req, res) => {
         id,
         data.customer_name,
         plan.name,
-        plan.price,
+        data.custom_price ?? plan.price,
         "RENEWED",
         formatDate(subscriptionDates.subscription_start_date),
         formatDate(subscriptionDates.subscription_end_date),
       ]
     );
 
-    res.json({ success: true, message: "Subscription renewed" });
+    let email;
+    try {
+      email = await sendSubscriptionRenewedEmail({
+        name: data.customer_name,
+        email: data.email,
+        companyName: data.company_name,
+        plan: plan.name,
+        amount: data.custom_price ?? plan.price,
+        gstRate: data.gst_rate ?? plan.gst_rate,
+        expiryDate: subscriptionDates.subscription_end_date,
+      });
+    } catch (emailError) {
+      console.error("Subscription renewal confirmation email failed:", emailError.message);
+      email = { sent: false, failed: true, reason: emailError.message };
+    }
+
+    const erp = await syncSubscription({ db: pool, customer: updatedCustomer.rows[0] });
+    res.json({ success: true, message: erp.failed ? "Subscription renewed in CRM, but ERP sync failed." : erp.skipped ? `Subscription renewed in CRM. ${erp.reason}` : "Subscription renewed and ERP synced.", customer: updatedCustomer.rows[0], delivery: { email }, erp });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
+};
+
+const retryErpSubscriptionSync = async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM customers WHERE id=$1", [req.params.id]);
+    const customer = result.rows[0];
+    if (!customer) return res.status(404).json({ success: false, message: "Customer not found" });
+    if (customer.sync_status !== "ERP_FAILED") return res.status(409).json({ success: false, message: "Only ERP_FAILED customers can retry ERP sync." });
+    const erp = await syncSubscription({ db: pool, customer });
+    return res.json({ success: !erp.failed, message: erp.failed ? `CRM data remains saved; ERP sync failed: ${erp.reason}` : erp.skipped ? erp.reason : "ERP sync completed.", erp });
+  } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 };
 
 const sendReminder = async (req, res) => {
@@ -906,6 +1042,9 @@ const sendReminder = async (req, res) => {
 
 module.exports = {
   createCustomer,
+  resyncCustomer,
+  resetCredentials,
+  updateCustomPlan,
   getAllCustomers,
   getConvertedLeadCustomers,
   getCustomerById,
@@ -914,5 +1053,7 @@ module.exports = {
   updateCustomerStatus,
   deleteCustomer,
   renewSubscription,
+  retryErpSubscriptionSync,
+  previewRenewal,
   sendReminder,
 };

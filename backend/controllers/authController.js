@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require("crypto");
 const pool = require("../config/database");
 const { sendPasswordResetEmail } = require("../utils/emailUtil");
+const { createAuthToken } = require("../middleware/auth");
 
 // ── Login ───────────────────────────────────────────────────────────────────
 const login = async (req, res) => {
@@ -40,6 +41,7 @@ const login = async (req, res) => {
       success: true,
       message: "Login successful",
       employee: safeEmployee,
+      token: createAuthToken(safeEmployee),
     });
 
   } catch (err) {

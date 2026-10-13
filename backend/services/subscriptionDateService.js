@@ -1,5 +1,3 @@
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
 const PLAN_ALIASES = {
   trail: "trial",
   trial: "free trial",
@@ -16,29 +14,54 @@ const parsePositiveNumber = (value) => {
   return match ? Number(match[1]) : null;
 };
 
+// Kept under the old export name for compatibility.  Calendar units deliberately
+// remain calendar units: one year from 29 Feb 2024 is 28 Feb 2025, not day 365.
 const parsePlanDurationInDays = (duration) => {
   const text = String(duration || "").trim().toLowerCase();
   const amount = parsePositiveNumber(text);
   const value = amount && amount > 0 ? amount : 1;
 
   if (!text) return null;
-  if (/\b(day|days|daily)\b/.test(text)) return Math.round(value);
-  if (/\b(week|weeks|weekly)\b/.test(text)) return Math.round(value * 7);
-  if (/\b(month|months|monthly)\b/.test(text)) return Math.round(value * 30);
-  if (/\b(year|years|annual|annually|yearly)\b/.test(text)) return Math.round(value * 365);
-  if (amount && amount > 0) return Math.round(amount);
+  if (text === "per year" || text === "per year + gst") return { unit: "years", value: 1 };
+  if (text === "customized plan") return null;
+  if (/\b(day|days|daily)\b/.test(text)) return { unit: "days", value: Math.round(value) };
+  if (/\b(week|weeks|weekly)\b/.test(text)) return { unit: "days", value: Math.round(value * 7) };
+  if (/\b(month|months|monthly)\b/.test(text)) return { unit: "months", value: Math.round(value) };
+  if (/\b(year|years|annual|annually|yearly)\b/.test(text)) return { unit: "years", value: Math.round(value) };
+  if (amount && amount > 0) return { unit: "days", value: Math.round(amount) };
 
   return null;
 };
 
-const calculateSubscriptionDates = (planDurationInDays, startDate = new Date()) => {
-  const duration = Number(planDurationInDays);
-  if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error("Plan duration must be a positive number of days");
+const addCalendarMonths = (date, months) => {
+  const next = new Date(date);
+  const originalDay = next.getDate();
+  next.setDate(1);
+  next.setMonth(next.getMonth() + months);
+  const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(originalDay, lastDay));
+  return next;
+};
+
+const addCalendarYears = (date, years) => addCalendarMonths(date, years * 12);
+
+const calculateSubscriptionDates = (planDuration, startDate = new Date()) => {
+  const duration = typeof planDuration === "number"
+    ? { unit: "days", value: planDuration }
+    : planDuration;
+  if (!duration || !Number.isFinite(Number(duration.value)) || Number(duration.value) <= 0) {
+    throw new Error("Plan duration must be a positive calendar duration");
   }
 
   const subscription_start_date = new Date(startDate);
-  const subscription_end_date = new Date(subscription_start_date.getTime() + Math.round(duration) * DAY_IN_MS);
+  const value = Math.round(Number(duration.value));
+  let subscription_end_date;
+  if (duration.unit === "years") subscription_end_date = addCalendarYears(subscription_start_date, value);
+  else if (duration.unit === "months") subscription_end_date = addCalendarMonths(subscription_start_date, value);
+  else {
+    subscription_end_date = new Date(subscription_start_date);
+    subscription_end_date.setDate(subscription_end_date.getDate() + value);
+  }
 
   return {
     subscription_start_date,
@@ -49,8 +72,9 @@ const calculateSubscriptionDates = (planDurationInDays, startDate = new Date()) 
 const getPlanForSubscription = async (db, planName) => {
   const planKey = normalizePlanKey(planName);
   const result = await db.query(
-    `SELECT id, name, price, duration
-     FROM plans
+    `SELECT p.id, p.name, p.price, p.duration,
+            COALESCE((to_jsonb(p)->>'gst_rate')::numeric, 18) AS gst_rate
+     FROM plans p
      WHERE LOWER(TRIM(name)) = $1
         OR LOWER(TRIM(name)) = $2
      ORDER BY created_at ASC
@@ -75,6 +99,7 @@ const getPlanForSubscription = async (db, planName) => {
   return {
     ...plan,
     price: Number(plan.price || 0),
+    gst_rate: Number(plan.gst_rate || 18),
     durationInDays,
   };
 };

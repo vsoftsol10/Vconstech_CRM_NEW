@@ -7,29 +7,33 @@ const erpApiClient = require("../integration/services/erpApiClient");
 const {
   createFollowUpTask,
 } = require("../integration/services/customerStatusSyncService");
+const { toDate, getReminderEligibility } = require("./subscriptionReminderRules");
 
 const PRICING_URL = "https://vconstech.in/pricing";
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const BUSINESS_TIME_ZONE = "Asia/Kolkata";
 
 const parseReminderDays = () =>
-  String(process.env.SUBSCRIPTION_REMINDER_DAYS || "30,7,1")
+  String(process.env.SUBSCRIPTION_REMINDER_DAYS || "30,15,7,1")
     .split(",")
     .map((value) => Number.parseInt(value.trim(), 10))
     .filter((value) => Number.isInteger(value) && value > 0)
     .sort((a, b) => b - a);
 
-const dateOnly = (date = new Date()) => date.toISOString().slice(0, 10);
+const dateOnly = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+};
 
 const addDays = (date, days) => {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
-};
-
-const toDate = (value) => {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const buildEventId = ({ customerId, type, referenceDate, daysBefore }) =>
@@ -44,8 +48,7 @@ const buildEventId = ({ customerId, type, referenceDate, daysBefore }) =>
     .join("-");
 
 const paidSubscriptionWhere = `
-  LOWER(COALESCE(subscription_plan, '')) NOT IN ('trial', 'free trial', 'trail')
-  AND LOWER(COALESCE(subscription_status, payment_status, '')) IN (
+  LOWER(COALESCE(subscription_status, payment_status, '')) IN (
     'subscription active',
     'active',
     'paid'
@@ -57,6 +60,22 @@ const paidSubscriptionWhere = `
     'subscription expired'
   )
 `;
+
+let expiredAtColumnExists;
+const hasExpiredAtColumn = async () => {
+  if (expiredAtColumnExists !== undefined) return expiredAtColumnExists;
+  const result = await pool.query(
+    `SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'expired_at'
+    ) AS exists`
+  );
+  expiredAtColumnExists = Boolean(result.rows[0]?.exists);
+  if (!expiredAtColumnExists) {
+    console.warn("[SubscriptionExpiry] customers.expired_at is unavailable; deploy the subscription migration to record expiry timestamps.");
+  }
+  return expiredAtColumnExists;
+};
 
 const tryReserveEvent = async ({ eventId, customer, status, payload }) => {
   const result = await pool.query(
@@ -102,26 +121,27 @@ const releaseEvent = (eventId) =>
   pool.query("DELETE FROM crm_erp_status_events WHERE event_id = $1", [eventId]);
 
 const fetchReminderCustomers = async (targetDate) => {
+  const today = dateOnly();
   const result = await pool.query(
     `SELECT *
      FROM customers
      WHERE renewal_date = $1::date
        AND email IS NOT NULL
-       AND renewal_date >= CURRENT_DATE
+       AND renewal_date >= $2::date
        AND ${paidSubscriptionWhere}`,
-    [targetDate]
+    [targetDate, today]
   );
 
   return result.rows;
 };
 
-const fetchExpiryCustomers = async () => {
+const fetchExpiryCustomers = async (today) => {
   const result = await pool.query(
     `SELECT *
      FROM customers
      WHERE (
        (
-         renewal_date <= CURRENT_DATE
+         renewal_date <= $1::date
          AND email IS NOT NULL
          AND ${paidSubscriptionWhere}
        )
@@ -133,7 +153,7 @@ const fetchExpiryCustomers = async () => {
            AND e.payload->>'completedAt' IS NULL
        )
      )`
-  );
+  , [today]);
 
   return result.rows;
 };
@@ -147,17 +167,16 @@ const markCrmInactive = async (customer) => {
   }
 
   const expiryDate = toDate(customer.renewal_date) || new Date();
-  const inactiveDate = addDays(new Date(), -1);
 
+  const setExpiredAt = await hasExpiredAtColumn() ? ", expired_at = NOW()" : "";
   const result = await pool.query(
     `UPDATE customers
-     SET renewal_date = $1::date,
-         subscription_end_date = $2::timestamptz,
-         payment_status = 'Subscription Expired',
+     SET payment_status = 'Subscription Expired',
          subscription_status = 'Subscription Expired'
-     WHERE id = $3
+         ${setExpiredAt}
+     WHERE id = $1
      RETURNING *`,
-    [dateOnly(inactiveDate), inactiveDate, customer.id]
+    [customer.id]
   );
 
   await pool.query(
@@ -202,13 +221,33 @@ const createSalesFollowUp = async (customer, eventId) =>
     eventId,
   });
 
-const processReminderCustomer = async ({ customer, daysBefore, targetDate }) => {
+const processReminderCustomer = async ({ customer, daysBefore, targetDate, dryRun = false }) => {
+  const eligibility = getReminderEligibility(customer, daysBefore);
+  if (eligibility.reason === "missing_start_date") {
+    console.warn("[SubscriptionExpiry] Missing subscription_start_date; sending reminder without legacy-term guard.", {
+      customerId: customer.id,
+      renewalDate: customer.renewal_date,
+      daysBefore,
+    });
+  }
+  if (!eligibility.shouldSend) {
+    return { customerId: customer.id, skipped: true, ...eligibility };
+  }
+
   const eventId = buildEventId({
     customerId: customer.id,
     type: "renewal-reminder",
     daysBefore,
     referenceDate: targetDate,
   });
+
+  if (dryRun) {
+    console.log("[SubscriptionExpiry][DRY_RUN] Would send renewal reminder", {
+      customerId: customer.id, email: customer.email, plan: customer.subscription_plan,
+      expiryDate: customer.renewal_date, daysBefore,
+    });
+    return { customerId: customer.id, wouldSend: "renewal-reminder", eventId };
+  }
 
   const reservation = await tryReserveEvent({
     eventId,
@@ -226,20 +265,26 @@ const processReminderCustomer = async ({ customer, daysBefore, targetDate }) => 
       companyName: customer.company_name,
       plan: customer.subscription_plan,
       expiryDate: customer.renewal_date,
+      amount: customer.custom_price ?? customer.subscription_amount,
+      gstRate: customer.gst_rate,
     });
 
     await pool.query(
       `UPDATE customers
        SET reminder_sent = true,
-           reminder_sent_date = CURRENT_DATE
+           reminder_sent_date = $2::date
        WHERE id = $1`,
-      [customer.id]
+      [customer.id, dateOnly()]
     );
 
     await completeEvent(eventId, { email });
     return { customerId: customer.id, sent: true, eventId, email };
   } catch (error) {
-    await releaseEvent(eventId);
+    await updateEventPayload(eventId, {
+      processing: false,
+      failedAt: new Date().toISOString(),
+      lastError: error.message,
+    });
     console.error("[SubscriptionExpiry] Reminder failed", {
       customerId: customer.id,
       eventId,
@@ -249,13 +294,20 @@ const processReminderCustomer = async ({ customer, daysBefore, targetDate }) => 
   }
 };
 
-const processExpiredCustomer = async (customer) => {
+const processExpiredCustomer = async (customer, { dryRun = false } = {}) => {
   const expiryDate = dateOnly(toDate(customer.renewal_date) || new Date());
   const eventId = buildEventId({
     customerId: customer.id,
     type: "expired",
     referenceDate: expiryDate,
   });
+
+  if (dryRun) {
+    console.log("[SubscriptionExpiry][DRY_RUN] Would send expiry email", {
+      customerId: customer.id, email: customer.email, plan: customer.subscription_plan, expiryDate: customer.renewal_date,
+    });
+    return { customerId: customer.id, wouldSend: "subscription-expired", eventId };
+  }
 
   const reservation = await tryReserveEvent({
     eventId,
@@ -279,6 +331,10 @@ const processExpiredCustomer = async (customer) => {
         name: customer.customer_name,
         email: customer.email,
         companyName: customer.company_name,
+        plan: customer.subscription_plan,
+        expiryDate: customer.renewal_date,
+        amount: customer.custom_price ?? customer.subscription_amount,
+        gstRate: customer.gst_rate,
       }));
 
     if (!eventPayload.email) {
@@ -311,13 +367,13 @@ const processExpiredCustomer = async (customer) => {
   }
 };
 
-const processReminderPhase = async ({ daysBefore, today }) => {
+const processReminderPhase = async ({ daysBefore, today, dryRun }) => {
   const targetDate = dateOnly(addDays(today, daysBefore));
   const customers = await fetchReminderCustomers(targetDate);
   const results = [];
 
   for (const customer of customers) {
-    results.push(await processReminderCustomer({ customer, daysBefore, targetDate }));
+    results.push(await processReminderCustomer({ customer, daysBefore, targetDate, dryRun }));
   }
 
   return {
@@ -331,12 +387,12 @@ const processReminderPhase = async ({ daysBefore, today }) => {
   };
 };
 
-const processExpiryPhase = async () => {
-  const customers = await fetchExpiryCustomers();
+const processExpiryPhase = async (today, { dryRun = false } = {}) => {
+  const customers = await fetchExpiryCustomers(today);
   const results = [];
 
   for (const customer of customers) {
-    results.push(await processExpiredCustomer(customer));
+    results.push(await processExpiredCustomer(customer, { dryRun }));
   }
 
   return {
@@ -348,22 +404,82 @@ const processExpiryPhase = async () => {
   };
 };
 
-const runSubscriptionExpiryJob = async () => {
-  const today = new Date();
+const retryFailedReminders = async ({ dryRun = false } = {}) => {
+  const result = await pool.query(
+    `SELECT e.event_id, e.payload, c.*
+     FROM crm_erp_status_events e
+     JOIN customers c ON c.id = e.crm_customer_id
+     WHERE e.status LIKE 'SUBSCRIPTION_REMINDER_%'
+       AND e.payload->>'completedAt' IS NULL
+       AND e.payload->>'failedAt' IS NOT NULL
+       AND c.email IS NOT NULL`
+  );
+
+  const retries = [];
+  for (const row of result.rows) {
+    const daysBefore = Number.parseInt(String(row.payload?.daysBefore || ""), 10);
+    const eligibility = getReminderEligibility(row, daysBefore);
+    if (eligibility.reason === "missing_start_date") {
+      console.warn("[SubscriptionExpiry] Missing subscription_start_date; retrying reminder without legacy-term guard.", {
+        customerId: row.id,
+        renewalDate: row.renewal_date,
+        daysBefore,
+      });
+    }
+    if (Number.isInteger(daysBefore) && !eligibility.shouldSend) {
+      retries.push({ customerId: row.id, eventId: row.event_id, skipped: true, ...eligibility });
+      continue;
+    }
+    if (dryRun) {
+      console.log("[SubscriptionExpiry][DRY_RUN] Would retry renewal reminder", {
+        customerId: row.id, email: row.email, plan: row.subscription_plan, expiryDate: row.renewal_date,
+      });
+      retries.push({ customerId: row.id, eventId: row.event_id, wouldSend: "renewal-reminder-retry" });
+      continue;
+    }
+    try {
+      const email = await sendSubscriptionReminderEmail({
+        name: row.customer_name,
+        email: row.email,
+        companyName: row.company_name,
+        plan: row.subscription_plan,
+        expiryDate: row.renewal_date,
+        amount: row.custom_price ?? row.subscription_amount,
+        gstRate: row.gst_rate,
+      });
+      await pool.query(
+        `UPDATE customers SET reminder_sent = true, reminder_sent_date = $2::date WHERE id = $1`,
+        [row.id, dateOnly()]
+      );
+      await completeEvent(row.event_id, { email, retriedAt: new Date().toISOString() });
+      retries.push({ customerId: row.id, eventId: row.event_id, sent: true });
+    } catch (error) {
+      await updateEventPayload(row.event_id, { failedAt: new Date().toISOString(), lastError: error.message });
+      retries.push({ customerId: row.id, eventId: row.event_id, failed: true, error: error.message });
+    }
+  }
+  return retries;
+};
+
+const runSubscriptionExpiryJob = async ({ dryRun = String(process.env.DRY_RUN).toLowerCase() === "true" } = {}) => {
+  const today = new Date(`${dateOnly()}T12:00:00+05:30`);
   const reminderDays = parseReminderDays();
 
   console.log("[SubscriptionExpiry] Checking subscription reminders and expiries.");
 
   const reminders = [];
   for (const daysBefore of reminderDays) {
-    reminders.push(await processReminderPhase({ daysBefore, today }));
+    reminders.push(await processReminderPhase({ daysBefore, today, dryRun }));
   }
 
-  const expiry = await processExpiryPhase();
+  const retries = await retryFailedReminders({ dryRun });
+  const expiry = await processExpiryPhase(dateOnly(today), { dryRun });
 
   return {
     reminderDays,
+    dryRun,
     reminders,
+    retries,
     expiry,
   };
 };

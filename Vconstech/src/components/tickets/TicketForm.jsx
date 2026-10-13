@@ -15,7 +15,7 @@ import {
   FiTrash2,
   FiUser,
 } from "react-icons/fi";
-import { API_BASE_URL } from "../../config/api";
+import { API_BASE_URL, customerApiFetch } from "../../config/api";
 
 const API = `${API_BASE_URL}`;
 const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed", "Draft"];
@@ -408,7 +408,7 @@ export default function TicketForm({ mode, ticketId, initialMode, inModal = fals
   useEffect(() => {
     const loadCompanies = async () => {
       try {
-        const res = await fetch(`${API}/api/customers`);
+        const res = await customerApiFetch(`${API}/api/customers`);
         const data = await res.json();
         const customers = Array.isArray(data) ? data : data.customers || data.data?.customers || [];
         const companies = [...new Set(

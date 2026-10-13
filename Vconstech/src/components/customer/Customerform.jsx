@@ -99,14 +99,38 @@ function formatDateOnly(date) {
 }
 
 function getPlanDurationDays(planName) {
-  return String(planName || "").trim().toLowerCase() === "trial" ? 7 : 30;
+  const key = String(planName || "").trim().toLowerCase();
+  if (key === "trial" || key === "free trial") return { unit: "days", value: 7 };
+  if (key === "basic" || key === "premium") return { unit: "years", value: 1 };
+  return null; // Advanced terms are custom and set by the backend/ERP.
+}
+
+function addCalendarYears(date, years) {
+  const next = new Date(date);
+  const originalDay = next.getDate();
+  next.setDate(1);
+  next.setFullYear(next.getFullYear() + years);
+  const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(originalDay, lastDay));
+  return next;
 }
 
 function getPlanDates(planName) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
+  const duration = getPlanDurationDays(planName);
+  if (!duration) {
+    const end = addCalendarYears(start, 1);
+    return { startDate: start, endDate: end, startDateOnly: formatDateOnly(start), endDateOnly: formatDateOnly(end) };
+  }
   const end = new Date(start);
-  end.setDate(end.getDate() + getPlanDurationDays(planName));
+  if (duration.unit === "years") return {
+    startDate: start,
+    endDate: addCalendarYears(start, duration.value),
+    startDateOnly: formatDateOnly(start),
+    endDateOnly: formatDateOnly(addCalendarYears(start, duration.value)),
+  };
+  end.setDate(end.getDate() + duration.value);
 
   return {
     startDate: start,
@@ -127,6 +151,14 @@ function customerToForm(data = {}) {
     subscription_plan: findPlan(data.subscription_plan || data.plan || data.package),
     purchase_date: toInputDate(data.start_date || data.createdAt),
     renewal_date: toInputDate(data.renewal_date),
+    custom_members: data.custom_users || data.customMembers || "",
+    custom_projects: data.custom_projects || data.customProjectLimit || "",
+    custom_price: data.custom_price || data.customPrice || "",
+    gst_rate: data.gst_rate ?? 18,
+    selected_features: data.custom_features?.features || [],
+    support_level: data.custom_features?.support_level || "Email support",
+    dedicated_setup: Boolean(data.custom_features?.dedicated_setup),
+    setup_notes: data.custom_features?.notes || "",
     notes: data.notes || "",
   };
 }
@@ -156,11 +188,29 @@ export default function CustomerFormPage({
     subscription_plan: null,
     purchase_date: "",
     renewal_date: "",
+    custom_members: "",
+    custom_projects: "",
+    custom_price: "",
+    gst_rate: 18,
+    selected_features: [],
+    support_level: "Email support",
+    dedicated_setup: false,
+    setup_notes: "",
     notes: "",
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(!isNew && Boolean(id) && !initialCustomer);
   const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState(null);
+  const [syncStatus, setSyncStatus] = useState(initialCustomer?.sync_status || "");
+  const [catalog, setCatalog] = useState([]);
+
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/api/plans`).then(({ data }) => {
+      const seen = new Set();
+      setCatalog((data || []).flatMap((plan) => (plan.features || []).map((feature) => ({ ...feature, plan: plan.name }))).filter((feature) => feature.feature_name && !seen.has(feature.feature_name) && seen.add(feature.feature_name)));
+    }).catch(() => setCatalog([]));
+  }, []);
 
   useEffect(() => {
     if (!modalMode) return undefined;
@@ -182,6 +232,7 @@ export default function CustomerFormPage({
   useEffect(() => {
     if (isNew || !initialCustomer) return;
     setForm(customerToForm(initialCustomer));
+    setSyncStatus(initialCustomer.sync_status || "");
     setLoading(false);
   }, [initialCustomer, isNew]);
 
@@ -194,6 +245,7 @@ export default function CustomerFormPage({
         const res = await axios.get(`${API_BASE_URL}/api/customers/${id}`);
         const data = unwrapCustomer(res.data);
         setForm(customerToForm(data));
+        setSyncStatus(data.sync_status || "");
       } catch (err) {
         setErrors({ form: err.response?.data?.message || "Failed to load customer" });
       } finally {
@@ -251,6 +303,13 @@ export default function CustomerFormPage({
     if (!email) next.email = "Email is required";
     else if (!emailPattern.test(email)) next.email = "Enter a valid email address";
     if (!form.subscription_plan) next.subscription_plan = "Plan is required";
+    if (form.subscription_plan?.label === "Advanced") {
+      if (!Number.isInteger(Number(form.custom_members)) || Number(form.custom_members) < 1) next.custom_members = "Engineers are required";
+      if (!Number.isInteger(Number(form.custom_projects)) || Number(form.custom_projects) < 1) next.custom_projects = "Projects are required";
+      if (form.custom_price === "" || Number(form.custom_price) < 0) next.custom_price = "Custom yearly price is required";
+      if (Number(form.gst_rate) < 0 || Number(form.gst_rate) > 100) next.gst_rate = "GST must be 0–100";
+      if (!form.purchase_date || !form.renewal_date || form.renewal_date <= form.purchase_date) next.renewal_date = "End date must be after start date";
+    }
     if (isErpCustomer) {
       if (!form.company_name.trim()) next.company_name = "Company is required";
       if (!form.location.trim()) next.location = "Location is required";
@@ -346,6 +405,13 @@ export default function CustomerFormPage({
         location: form.location.trim(),
         subscription_plan: form.subscription_plan.label,
         notes: form.notes.trim(),
+        startDate: form.purchase_date || undefined,
+        endDate: form.renewal_date || undefined,
+        customMembers: form.subscription_plan.label === "Advanced" ? Number(form.custom_members) : undefined,
+        customProjectLimit: form.subscription_plan.label === "Advanced" ? Number(form.custom_projects) : undefined,
+        customPrice: form.subscription_plan.label === "Advanced" ? Number(form.custom_price) : undefined,
+        gstRate: form.subscription_plan.label === "Advanced" ? Number(form.gst_rate) : undefined,
+      customFeatures: form.subscription_plan.label === "Advanced" ? { features: form.selected_features, support_level: form.support_level, dedicated_setup: form.dedicated_setup, notes: form.setup_notes.trim() } : undefined,
       };
       const selectedPlanName = form.subscription_plan.label;
       const currentPlanName =
@@ -376,7 +442,7 @@ export default function CustomerFormPage({
           shouldStartPlan,
         };
 
-        if (shouldStartPlan) {
+        if (shouldStartPlan && planDates) {
           Object.assign(subscriptionPayload, {
             subscriptionStartedAt: planDates.startDate.toISOString(),
             subscriptionStartDate: planDates.startDate.toISOString(),
@@ -394,9 +460,14 @@ export default function CustomerFormPage({
 
         await axios.put(`${API_BASE_URL}/api/customers/${id}/subscription`, subscriptionPayload);
       } else if (isNew) {
-        await axios.post(`${API_BASE_URL}/api/customers`, payload);
+        const response = await axios.post(`${API_BASE_URL}/api/customers`, payload);
+        setSaveResult({ message: response.data?.message, customer: response.data?.customer, erpEnabled: response.data?.erpEnabled });
+        onRefresh?.();
+        onCustomerAdded?.();
+        return;
       } else {
-        await axios.put(`${API_BASE_URL}/api/customers/${id}`, payload);
+        if (selectedPlanName === "Advanced") await axios.put(`${API_BASE_URL}/api/customers/${id}/custom-plan`, payload);
+        else await axios.put(`${API_BASE_URL}/api/customers/${id}`, payload);
       }
       onRefresh?.();
       onCustomerAdded?.();
@@ -463,6 +534,7 @@ export default function CustomerFormPage({
                 {errors.form}
               </div>
             )}
+            {saveResult && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{saveResult.message}</div>}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Customer Name" error={errors.customer_name}>
@@ -535,7 +607,7 @@ export default function CustomerFormPage({
                   placeholder="Select plan"
                   value={form.subscription_plan}
                   onChange={setPlan}
-                  options={PLANS}
+                  options={isNew || form.subscription_plan?.label === "Advanced" ? PLANS : PLANS.filter((plan) => plan.value !== "Advanced")}
                 />
               </Field>
               {!isNew && (
@@ -550,16 +622,37 @@ export default function CustomerFormPage({
               )}
             </div>
 
-            {!isNew && (
+            {(isNew || !isNew) && (
               <Field label="Renewal Date" error={errors.renewal_date}>
                 <input
                   type="date"
                   value={form.renewal_date}
-                  readOnly
+                  readOnly={form.subscription_plan?.label !== "Advanced"}
+                  onChange={set("renewal_date")}
                   className={`${inputCls(errors.renewal_date)} cursor-not-allowed text-gray-500`}
                 />
               </Field>
             )}
+
+            {form.subscription_plan?.label === "Advanced" && <>
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 space-y-4">
+                <h3 className="font-semibold text-gray-800">Customize plan</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Engineers" error={errors.custom_members}><input type="number" min="1" value={form.custom_members} onChange={set("custom_members")} className={inputCls(errors.custom_members)} /></Field>
+                <Field label="Projects" error={errors.custom_projects}><input type="number" min="1" value={form.custom_projects} onChange={set("custom_projects")} className={inputCls(errors.custom_projects)} /></Field>
+                <Field label="Custom yearly price (before GST)" error={errors.custom_price}><input type="number" min="0" value={form.custom_price} onChange={set("custom_price")} className={inputCls(errors.custom_price)} /></Field>
+                <Field label="GST %" error={errors.gst_rate}><input type="number" min="0" max="100" value={form.gst_rate} onChange={set("gst_rate")} className={inputCls(errors.gst_rate)} /></Field>
+              </div>
+              <Field label="Start Date"><input type="date" value={form.purchase_date} onChange={set("purchase_date")} className={inputCls(false)} /></Field>
+              <Field label="Features">
+                <button type="button" onClick={() => setForm((prev) => ({ ...prev, selected_features: catalog.filter((feature) => String(feature.plan).toLowerCase() === "premium").map((feature) => feature.feature_name) }))} className="mb-2 text-xs font-semibold text-yellow-700 underline">Select all Premium features</button>
+                {catalog.length ? Object.entries(catalog.reduce((groups, feature) => ({ ...groups, [feature.category_name || "General"]: [...(groups[feature.category_name || "General"] || []), feature] }), {})).map(([category, features]) => <div key={category} className="mb-2"><p className="text-xs font-semibold text-gray-600">{category}</p>{features.map((feature) => <label key={feature.feature_name} className="mr-4 inline-flex items-center gap-1 text-sm"><input type="checkbox" checked={form.selected_features.includes(feature.feature_name)} onChange={(event) => setForm((prev) => ({ ...prev, selected_features: event.target.checked ? [...prev.selected_features, feature.feature_name] : prev.selected_features.filter((item) => item !== feature.feature_name) }))} />{feature.feature_name}</label>)}</div>) : <p className="text-sm text-gray-500">No catalog features are available.</p>}
+              </Field>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Field label="Support level"><select value={form.support_level} onChange={set("support_level")} className={inputCls(false)}><option>Email support</option><option>Priority email support</option></select></Field><label className="mt-7 inline-flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={form.dedicated_setup} onChange={(event) => setForm((prev) => ({ ...prev, dedicated_setup: event.target.checked }))} />Dedicated/customized engineer/project setup</label></div>
+              {form.dedicated_setup && <Field label="Setup notes"><textarea rows={2} value={form.setup_notes} onChange={set("setup_notes")} className={inputCls(false)} /></Field>}
+              <div className="rounded-lg bg-white p-3 text-sm text-gray-700"><strong>Summary</strong><br/>Engineers: {form.custom_members || 0} · Projects: {form.custom_projects || 0}<br/>Features: {form.selected_features.length ? form.selected_features.join(", ") : "None selected"}<br/>Price: ₹{Number(form.custom_price || 0).toLocaleString("en-IN")} + GST ₹{((Number(form.custom_price || 0) * Number(form.gst_rate || 0)) / 100).toLocaleString("en-IN")} = <strong>₹{(Number(form.custom_price || 0) * (1 + Number(form.gst_rate || 0) / 100)).toLocaleString("en-IN")}</strong><br/>Expiry: {form.renewal_date || "Not set"}</div>
+              </div>
+            </>}
 
             <Field label="Notes" error={errors.notes}>
               <textarea
@@ -573,6 +666,7 @@ export default function CustomerFormPage({
           </div>
 
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 shrink-0 bg-white">
+            {!isNew && syncStatus === "ERP_FAILED" && <button type="button" onClick={() => axios.post(`${API_BASE_URL}/api/customers/${id}/retry-erp-sync`).then((response) => { setSaveResult({ message: response.data?.message }); if (response.data?.erp?.synced) setSyncStatus("SYNCED"); }).catch(applyApiErrors)} className="px-4 py-2.5 rounded-xl border border-yellow-300 text-sm font-semibold text-yellow-800">Retry ERP sync</button>}
             <button
               onClick={close}
               className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"
@@ -587,8 +681,9 @@ export default function CustomerFormPage({
               className="px-6 py-2.5 rounded-xl text-sm font-bold text-black transition-all shadow-sm disabled:opacity-70"
               style={{ background: YELLOW }}
             >
-              {saving ? "Saving..." : isNew ? "Create Customer" : "Update Customer"}
+              {saving ? "Saving..." : isNew ? "Create Customer" : form.subscription_plan?.label === "Advanced" ? "Edit custom plan" : "Update Customer"}
             </motion.button>
+            {saveResult?.customer?.id && <button onClick={() => axios.post(`${API_BASE_URL}/api/customers/${saveResult.customer.id}/resync`).then((r) => setSaveResult((prev) => ({ ...prev, message: r.data.message }))).catch(applyApiErrors)} disabled={!saveResult.erpEnabled} className="px-4 py-2.5 rounded-xl border text-sm disabled:opacity-50">Resync / Resend credentials</button>}
           </div>
         </div>
       </motion.div>

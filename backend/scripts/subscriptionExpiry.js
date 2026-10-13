@@ -10,7 +10,7 @@ const scheduleSubscriptionExpiryJob = () => {
     } catch (error) {
       console.error("[SubscriptionExpiry] Job failed:", error.message);
     }
-  });
+  }, { timezone: "Asia/Kolkata" });
 
   console.log(`[SubscriptionExpiry] Job scheduled with cron "${expression}".`);
   return task;

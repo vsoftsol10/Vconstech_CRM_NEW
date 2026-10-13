@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bell, CheckCircle, ChevronRight, Mail, MessageCircle, X } from "lucide-react";
-import { API_BASE_URL } from "../../../config/api";
+import { API_BASE_URL, customerApiFetch } from "../../../config/api";
 
 const YELLOW = "#F5A500";
 const YELLOW_LIGHT = "#FFF8DC";
@@ -140,7 +140,7 @@ export default function SendReminderModal({
 
     try {
       setSending(true);
-      const res = await fetch(`${API_BASE_URL}/api/customers/${row.id}/reminder`, {
+      const res = await customerApiFetch(`${API_BASE_URL}/api/customers/${row.id}/reminder`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

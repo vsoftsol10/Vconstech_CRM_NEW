@@ -212,7 +212,7 @@ function FilterHeader({ label, active, buttonRef, open, onToggle, children }) {
   );
 }
 
-export default function SubscriptionTable({ filtered = [], onReminderSent }) {
+export default function SubscriptionTable({ filtered = [], onReminderSent, onRenewed }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [headerFilterOpen, setHeaderFilterOpen] = useState(null);
@@ -437,7 +437,7 @@ export default function SubscriptionTable({ filtered = [], onReminderSent }) {
                         </span>
                       </td>
                       <td className="px-4 py-3 align-middle">
-                        <ActionMenu row={row} onReminderSent={onReminderSent} />
+                        <ActionMenu row={row} onReminderSent={onReminderSent} onRenewed={onRenewed} />
                       </td>
                     </tr>
                   );

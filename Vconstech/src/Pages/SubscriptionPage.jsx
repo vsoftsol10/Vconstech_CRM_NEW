@@ -201,6 +201,13 @@ export default function SubscriptionPage() {
                 )
               )
             }
+            onRenewed={(updatedRow) =>
+              setSubscriptions((prev) =>
+                prev.map((item) =>
+                  String(item.id) === String(updatedRow.id) ? { ...item, ...updatedRow } : item
+                )
+              )
+            }
           />
           <SubscriptionMobileCards
             filtered={filtered}

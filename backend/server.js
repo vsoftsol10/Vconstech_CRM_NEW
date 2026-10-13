@@ -1,4 +1,9 @@
 require("dotenv").config();
+
+if (!process.env.AUTH_TOKEN_SECRET?.trim()) {
+  throw new Error("AUTH_TOKEN_SECRET must be configured before the server can start");
+}
+
 const express = require("express");
 
 const cors = require("cors");

@@ -191,6 +191,15 @@ export default function CustomerViewPanel({ customer, onClose, onEdit }) {
               label="Renewal Date"
               value={customer.renewal_date?.split("T")[0]}
             />
+            {String(customer.subscription_plan || "").toLowerCase() === "advanced" && <>
+              <DetailRow label="Engineers" value={customer.custom_users} />
+              <DetailRow label="Projects" value={customer.custom_projects} />
+              <DetailRow label="Custom yearly price" value={customer.custom_price ? `₹${customer.custom_price}` : "—"} />
+              <DetailRow label="GST" value={customer.gst_rate !== undefined ? `${customer.gst_rate}%` : "—"} />
+              <DetailRow label="Features" value={(customer.custom_features?.features || []).join(", ") || "None"} />
+              <DetailRow label="Support" value={customer.custom_features?.support_level} />
+              {customer.custom_features?.dedicated_setup && <DetailRow label="Dedicated setup" value={customer.custom_features?.notes || "Yes"} />}
+            </>}
           </div>
         </div>
 
