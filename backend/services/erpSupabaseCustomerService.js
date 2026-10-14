@@ -8,12 +8,14 @@ if (typeof dns.setDefaultResultOrder === "function") {
 }
 
 let erpPool;
+const getErpConnectionString = () => process.env.ERP_DATABASE_POOLER_URL || process.env.ERP_DATABASE_URL;
 
 const getErpPool = () => {
-  if (!process.env.ERP_DATABASE_URL) return null;
+  const connectionString = getErpConnectionString();
+  if (!connectionString) return null;
   if (!erpPool) {
     erpPool = new Pool({
-      connectionString: process.env.ERP_DATABASE_URL,
+      connectionString,
       ssl: { rejectUnauthorized: false },
     });
   }
@@ -134,7 +136,7 @@ const baseSelect = `
   LEFT JOIN "Client" c ON c.id = u."clientId"
 `;
 
-const isConfigured = () => Boolean(process.env.ERP_DATABASE_URL);
+const isConfigured = () => Boolean(getErpConnectionString());
 
 const getCustomers = async (query = {}) => {
   const pool = getErpPool();
