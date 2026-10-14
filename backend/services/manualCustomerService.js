@@ -19,7 +19,7 @@ const normalizeInput = (body = {}) => {
   return {
     customer_name: text(body.customer_name || body.name), company_name: text(body.company_name || body.companyName),
     email: text(body.email).toLowerCase(), phone: text(body.phone).replace(/\D/g, ""),
-    role: text(body.role), address: text(body.address), password: text(body.password),
+    role: text(body.role), address: text(body.address),
     city: text(body.city || body.location), subscription_plan: plan, planKey, start, end,
     custom_users: advanced ? Number(body.customMembers ?? body.custom_users) : null,
     custom_projects: advanced ? Number(body.customProjectLimit ?? body.custom_projects) : null,
@@ -39,7 +39,6 @@ const validate = (value, { requireAccountDetails = false } = {}) => {
     if (!value.city) errors.location = "City is required";
     if (!value.role) errors.role = "Role is required";
     if (!value.address) errors.address = "Address is required";
-    if (value.password.length < 6) errors.password = "Password must be at least 6 characters";
   }
   if (!EMAIL.test(value.email)) errors.email = "Enter a valid email address";
   if (!PHONE.test(value.phone)) errors.phone = "Enter a valid 10-digit Indian mobile number";
@@ -102,12 +101,12 @@ const createManualCustomer = async ({ db, body, sendCredentials, request = fetch
   const duplicate = await db.query("SELECT id FROM customers WHERE LOWER(email) = $1 OR regexp_replace(phone, '\\D', '', 'g') = $2 LIMIT 1", [value.email, value.phone]);
   if (duplicate.rows[0]) { const e = new Error("A customer with this email or phone already exists."); e.status = 409; throw e; }
   const { start, end } = datesFor(value); const startDate = dateOnly(start); const endDate = dateOnly(end);
-  const inserted = await db.query(`INSERT INTO customers (customer_name, company_name, phone, email, address, customer_role, location, subscription_plan, subscription_amount, start_date, renewal_date, subscription_start_date, subscription_end_date, subscription_status, payment_status, custom_users, custom_projects, custom_templates, custom_price, gst_rate, custom_features, sync_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11::date,$10::date,$11::date,'Subscription Active','Subscription Active',$12,$13,$14,$15,$16,$17,'ERP_PENDING',$18) RETURNING *`, [value.customer_name, value.company_name || null, value.phone, value.email, value.address, value.role, value.city || null, value.subscription_plan, value.custom_price || 0, startDate, endDate, value.custom_users, value.custom_projects, value.custom_templates, value.custom_price, value.gst_rate, value.custom_features ? JSON.stringify(value.custom_features) : null, value.notes || null]);
+  const inserted = await db.query(`INSERT INTO customers (customer_name, company_name, phone, email, location, subscription_plan, subscription_amount, start_date, renewal_date, subscription_start_date, subscription_end_date, subscription_status, payment_status, custom_users, custom_projects, custom_price, gst_rate, custom_features, sync_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$8::date,$9::date,'Subscription Active','Subscription Active',$10,$11,$12,$13,$14,'ERP_PENDING',$15) RETURNING *`, [value.customer_name, value.company_name || null, value.phone, value.email, value.city || null, value.subscription_plan, value.custom_price || 0, startDate, endDate, value.custom_users, value.custom_projects, value.custom_price, value.gst_rate, value.custom_features ? JSON.stringify(value.custom_features) : null, value.notes || null]);
   const customer = inserted.rows[0];
   await db.query("INSERT INTO subscription_history (customer_id, customer_name, plan_name, amount, action_type, start_date, end_date) VALUES ($1,$2,$3,$4,'CREATED',$5::date,$6::date)", [customer.id, customer.customer_name, customer.subscription_plan, customer.custom_price || 0, startDate, endDate]);
   await db.query("INSERT INTO crm_erp_customer_mappings (lead_id, customer_id, status, request_payload) VALUES (NULL,$1,'ERP_PENDING',$2)", [customer.id, JSON.stringify({ source: "manual", role: value.role, address: value.address, customTemplates: value.custom_templates })]);
   if (!enabled()) return { customer: { ...customer, sync_status: "ERP_PENDING" }, message: "Saved in CRM. ERP sync is pending because ERP creation is disabled." };
-  return syncCustomer({ db, customer, sendCredentials, request, requestedPassword: value.password });
+  return syncCustomer({ db, customer: { ...customer, role: value.role, address: value.address, city: value.city, custom_templates: value.custom_templates }, sendCredentials, request });
 };
 
 const syncCustomer = async ({ db, customer, sendCredentials, request = fetch, requestedPassword }) => {

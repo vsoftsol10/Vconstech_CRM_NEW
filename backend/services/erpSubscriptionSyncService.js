@@ -4,7 +4,7 @@ const advanced = (plan) => String(plan || "").trim().toLowerCase() === "advanced
 
 const buildPayload = (customer) => {
   const payload = { crmCustomerId: customer.id, plan: customer.subscription_plan, startDate: date(customer.subscription_start_date || customer.start_date), trialEndDate: date(customer.subscription_end_date || customer.renewal_date) };
-  if (advanced(customer.subscription_plan)) Object.assign(payload, { customMembers: customer.custom_users, customProjectLimit: customer.custom_projects, customPrice: customer.custom_price });
+  if (advanced(customer.subscription_plan)) Object.assign(payload, { customMembers: customer.custom_users, customProjectLimit: customer.custom_projects, customTemplateLimit: customer.custom_templates, customPrice: customer.custom_price });
   return payload;
 };
 

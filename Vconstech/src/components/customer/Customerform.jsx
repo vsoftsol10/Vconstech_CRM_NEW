@@ -938,8 +938,6 @@ export default function CustomerFormPage({
     phone: "",
     email: "",
     role: "",
-    password: "",
-    confirm_password: "",
     address: "",
     location: "",
 
@@ -1067,8 +1065,6 @@ export default function CustomerFormPage({
       if (!form.company_name.trim()) next.company_name = "Company name is required";
       if (!form.location.trim()) next.location = "City is required";
       if (!form.role) next.role = "Role is required";
-      if (form.password.length < 6) next.password = "Password must be at least 6 characters";
-      if (form.confirm_password !== form.password) next.confirm_password = "Passwords do not match";
       if (!form.address.trim()) next.address = "Address is required";
     }
     if (!form.subscription_plan) next.subscription_plan = "Plan is required";
@@ -1175,7 +1171,6 @@ export default function CustomerFormPage({
         phone: form.phone.trim(),
         email: form.email.trim(),
         role: form.role,
-        password: isNew ? form.password : undefined,
         address: form.address.trim(),
         location: form.location.trim(),
         subscription_plan: form.subscription_plan.label,
@@ -1377,15 +1372,6 @@ export default function CustomerFormPage({
                 </Field>
               )}
             </div>
-
-            {isNew && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Password" error={errors.password}>
-                <input type="password" autoComplete="new-password" value={form.password} onChange={set("password")} placeholder="Min 6 characters" className={inputCls(errors.password)} />
-              </Field>
-              <Field label="Confirm Password" error={errors.confirm_password}>
-                <input type="password" autoComplete="new-password" value={form.confirm_password} onChange={set("confirm_password")} placeholder="Re-enter password" className={inputCls(errors.confirm_password)} />
-              </Field>
-            </div>}
 
             {isNew && <Field label="Address" error={errors.address}>
               <textarea rows={3} value={form.address} onChange={set("address")} placeholder="Enter full address" className={inputCls(errors.address)} />
