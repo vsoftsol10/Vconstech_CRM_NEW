@@ -27,6 +27,7 @@ const formattedCustomerSelect = `
   id, lead_id, erp_customer_id, customer_name, company_name, phone, email,
   COALESCE((SELECT m.request_payload->>'address' FROM crm_erp_customer_mappings m WHERE m.customer_id = customers.id LIMIT 1), '') AS address,
   COALESCE((SELECT m.request_payload->>'role' FROM crm_erp_customer_mappings m WHERE m.customer_id = customers.id LIMIT 1), '') AS customer_role,
+  COALESCE((SELECT m.request_payload->>'city' FROM crm_erp_customer_mappings m WHERE m.customer_id = customers.id LIMIT 1), '') AS location,
   NULLIF((SELECT m.request_payload->>'customTemplates' FROM crm_erp_customer_mappings m WHERE m.customer_id = customers.id LIMIT 1), '')::integer AS custom_templates,
   renewal_date >= CURRENT_DATE AS active,
   subscription_plan, subscription_amount, custom_users, custom_projects, custom_price, gst_rate, custom_features, sync_status,
