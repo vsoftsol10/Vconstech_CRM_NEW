@@ -18,7 +18,7 @@ const normalizeInput = (body = {}) => {
   const end = advanced ? text(body.endDate || body.end_date) || dateOnly(addYear(parseDate(start) || new Date())) : null;
   return {
     customer_name: text(body.customer_name || body.name), company_name: text(body.company_name || body.companyName),
-    email: text(body.email).toLowerCase(), phone: text(body.phone).replace(/\D/g, ""), address: text(body.address),
+    email: text(body.email).toLowerCase(), phone: text(body.phone).replace(/\D/g, ""),
     city: text(body.city || body.location), subscription_plan: plan, planKey, start, end,
     custom_users: advanced ? Number(body.customMembers ?? body.custom_users) : null,
     custom_projects: advanced ? Number(body.customProjectLimit ?? body.custom_projects) : null,
@@ -89,7 +89,7 @@ const createManualCustomer = async ({ db, body, sendCredentials, request = fetch
   const duplicate = await db.query("SELECT id FROM customers WHERE LOWER(email) = $1 OR regexp_replace(phone, '\\D', '', 'g') = $2 LIMIT 1", [value.email, value.phone]);
   if (duplicate.rows[0]) { const e = new Error("A customer with this email or phone already exists."); e.status = 409; throw e; }
   const { start, end } = datesFor(value); const startDate = dateOnly(start); const endDate = dateOnly(end);
-  const inserted = await db.query(`INSERT INTO customers (customer_name, company_name, phone, email, address, location, subscription_plan, subscription_amount, start_date, renewal_date, subscription_start_date, subscription_end_date, subscription_status, payment_status, custom_users, custom_projects, custom_price, gst_rate, custom_features, sync_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$9::date,$10::date,'Subscription Active','Subscription Active',$11,$12,$13,$14,$15,'ERP_PENDING',$16) RETURNING *`, [value.customer_name, value.company_name || null, value.phone, value.email, value.address || null, value.city || null, value.subscription_plan, value.custom_price || 0, startDate, endDate, value.custom_users, value.custom_projects, value.custom_price, value.gst_rate, value.custom_features ? JSON.stringify(value.custom_features) : null, value.notes || null]);
+  const inserted = await db.query(`INSERT INTO customers (customer_name, company_name, phone, email, location, subscription_plan, subscription_amount, start_date, renewal_date, subscription_start_date, subscription_end_date, subscription_status, payment_status, custom_users, custom_projects, custom_price, gst_rate, custom_features, sync_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$8::date,$9::date,'Subscription Active','Subscription Active',$10,$11,$12,$13,$14,'ERP_PENDING',$15) RETURNING *`, [value.customer_name, value.company_name || null, value.phone, value.email, value.city || null, value.subscription_plan, value.custom_price || 0, startDate, endDate, value.custom_users, value.custom_projects, value.custom_price, value.gst_rate, value.custom_features ? JSON.stringify(value.custom_features) : null, value.notes || null]);
   const customer = inserted.rows[0];
   await db.query("INSERT INTO subscription_history (customer_id, customer_name, plan_name, amount, action_type, start_date, end_date) VALUES ($1,$2,$3,$4,'CREATED',$5::date,$6::date)", [customer.id, customer.customer_name, customer.subscription_plan, customer.custom_price || 0, startDate, endDate]);
   await db.query("INSERT INTO crm_erp_customer_mappings (lead_id, customer_id, status, request_payload) VALUES (NULL,$1,'ERP_PENDING',$2)", [customer.id, JSON.stringify({ source: "manual" })]);

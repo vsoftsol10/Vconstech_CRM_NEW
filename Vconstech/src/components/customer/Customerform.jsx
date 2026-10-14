@@ -936,7 +936,6 @@ export default function CustomerFormPage({
     company_name: "",
     phone: "",
     email: "",
-    address: "",
     location: "",
 
     subscription_plan: null,
@@ -1073,7 +1072,6 @@ export default function CustomerFormPage({
     if (isErpCustomer) {
       if (!form.company_name.trim()) next.company_name = "Company is required";
       if (!form.location.trim()) next.location = "Location is required";
-      if (!form.address.trim()) next.address = "Address is required";
     }
     return next;
   };
@@ -1163,7 +1161,6 @@ export default function CustomerFormPage({
         company_name: form.company_name.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
-        address: form.address.trim(),
         location: form.location.trim(),
         subscription_plan: form.subscription_plan.label,
         notes: form.notes.trim(),
@@ -1357,15 +1354,6 @@ export default function CustomerFormPage({
                   onChange={set("location")}
                   placeholder="City"
                   className={inputCls(errors.location)}
-                />
-              </Field>
-              <Field label="Address" error={errors.address}>
-                <input
-                  type="text"
-                  value={form.address}
-                  onChange={set("address")}
-                  placeholder="Enter address"
-                  className={inputCls(errors.address)}
                 />
               </Field>
             </div>
