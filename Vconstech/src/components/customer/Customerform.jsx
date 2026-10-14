@@ -901,6 +901,7 @@ function customerToForm(data = {}) {
     phone: String(data.phone || data.phoneNumber || "").replace(/\D/g, ""),
     email: data.email || "",
     address: data.address || "",
+    role: data.role || data.customer_role || "",
     location: data.location || data.city || "",
     subscription_plan: findPlan(data.subscription_plan || data.plan || data.package),
     purchase_date: toInputDate(data.start_date || data.createdAt),
@@ -936,6 +937,10 @@ export default function CustomerFormPage({
     company_name: "",
     phone: "",
     email: "",
+    role: "",
+    password: "",
+    confirm_password: "",
+    address: "",
     location: "",
 
     subscription_plan: null,
@@ -1058,12 +1063,20 @@ export default function CustomerFormPage({
     else if (!phonePattern.test(phone)) next.phone = "Enter a valid 10-digit mobile number";
     if (!email) next.email = "Email is required";
     else if (!emailPattern.test(email)) next.email = "Enter a valid email address";
+    if (isNew) {
+      if (!form.company_name.trim()) next.company_name = "Company name is required";
+      if (!form.location.trim()) next.location = "City is required";
+      if (!form.role) next.role = "Role is required";
+      if (form.password.length < 6) next.password = "Password must be at least 6 characters";
+      if (form.confirm_password !== form.password) next.confirm_password = "Passwords do not match";
+      if (!form.address.trim()) next.address = "Address is required";
+    }
     if (!form.subscription_plan) next.subscription_plan = "Plan is required";
     if (form.subscription_plan?.label === "Advanced" && !canCustomizePlan()) {
       next.subscription_plan = PLAN_ROLE_ERROR;
     }
     if (form.subscription_plan?.label === "Advanced") {
-      if (!Number.isInteger(Number(form.custom_templates)) || Number(form.custom_templates) < 1) next.custom_templates = "Templates count is required";
+      if (!Number.isInteger(Number(form.custom_templates)) || Number(form.custom_templates) < 1 || Number(form.custom_templates) > 10) next.custom_templates = "Enter 1 to 10 templates";
       if (!Number.isInteger(Number(form.custom_members)) || Number(form.custom_members) < 1) next.custom_members = "Engineer count is required";
       if (!Number.isInteger(Number(form.custom_projects)) || Number(form.custom_projects) < 1) next.custom_projects = "Project count is required";
       if (form.custom_price === "" || Number(form.custom_price) < 0) next.custom_price = "Price is required";
@@ -1161,6 +1174,9 @@ export default function CustomerFormPage({
         company_name: form.company_name.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
+        role: form.role,
+        password: isNew ? form.password : undefined,
+        address: form.address.trim(),
         location: form.location.trim(),
         subscription_plan: form.subscription_plan.label,
         notes: form.notes.trim(),
@@ -1304,7 +1320,7 @@ export default function CustomerFormPage({
             {saveResult && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{saveResult.message}</div>}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Customer Name" error={errors.customer_name}>
+              <Field label="Client Name" error={errors.customer_name}>
                 <input
                   type="text"
                   value={form.customer_name}
@@ -1313,53 +1329,35 @@ export default function CustomerFormPage({
                   className={inputCls(errors.customer_name)}
                 />
               </Field>
-              <Field label="Company" error={errors.company_name}>
-                <input
-                  type="text"
-                  value={form.company_name}
-                  onChange={set("company_name")}
-                  placeholder="Enter company name"
-                  className={inputCls(errors.company_name)}
-                />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Phone" error={errors.phone}>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  value={form.phone}
-                  onChange={set("phone")}
-                  placeholder="9876543210"
-                  className={inputCls(errors.phone)}
-                />
-              </Field>
               <Field label="Email" error={errors.email}>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={set("email")}
-                  placeholder="example@email.com"
-                  className={inputCls(errors.email)}
-                />
+                <input type="email" value={form.email} onChange={set("email")} placeholder="Enter email address" className={inputCls(errors.email)} />
               </Field>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Location" error={errors.location}>
-                <input
-                  type="text"
-                  value={form.location}
-                  onChange={set("location")}
-                  placeholder="City"
-                  className={inputCls(errors.location)}
-                />
+              <Field label="Contact Number" error={errors.phone}>
+                <input type="tel" inputMode="numeric" value={form.phone} onChange={set("phone")} placeholder="Enter 10-digit phone number" className={inputCls(errors.phone)} />
+              </Field>
+              <Field label="Role" error={errors.role}>
+                <select value={form.role} onChange={set("role")} className={inputCls(errors.role)}>
+                  <option value="">Select role</option>
+                  <option value="Admin">Admin</option>
+                  <option value="User">User</option>
+                </select>
               </Field>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Plan" error={errors.subscription_plan}>
+              <Field label="Company Name" error={errors.company_name}>
+                <input type="text" value={form.company_name} onChange={set("company_name")} placeholder="Enter company name" className={inputCls(errors.company_name)} />
+              </Field>
+              <Field label="City" error={errors.location}>
+                <input type="text" value={form.location} onChange={set("location")} placeholder="Enter city name" className={inputCls(errors.location)} />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Package" error={errors.subscription_plan}>
                 <Select
                   styles={selectStyles(errors.subscription_plan)}
                   placeholder="Select plan"
@@ -1380,6 +1378,19 @@ export default function CustomerFormPage({
               )}
             </div>
 
+            {isNew && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Password" error={errors.password}>
+                <input type="password" autoComplete="new-password" value={form.password} onChange={set("password")} placeholder="Min 6 characters" className={inputCls(errors.password)} />
+              </Field>
+              <Field label="Confirm Password" error={errors.confirm_password}>
+                <input type="password" autoComplete="new-password" value={form.confirm_password} onChange={set("confirm_password")} placeholder="Re-enter password" className={inputCls(errors.confirm_password)} />
+              </Field>
+            </div>}
+
+            {isNew && <Field label="Address" error={errors.address}>
+              <textarea rows={3} value={form.address} onChange={set("address")} placeholder="Enter full address" className={inputCls(errors.address)} />
+            </Field>}
+
             <Field label="Renewal Date" error={errors.renewal_date}>
               <input
                 type="date"
@@ -1396,43 +1407,44 @@ export default function CustomerFormPage({
                 <h3 className="font-semibold text-gray-800">Advanced plan details</h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field label="Templates Count" error={errors.custom_templates}>
+                  <Field label="Number of Templates" error={errors.custom_templates}>
                     <input
                       type="number"
                       min="1"
+                      max="10"
                       value={form.custom_templates}
                       onChange={set("custom_templates")}
-                      placeholder="e.g. 10"
+                      placeholder="Enter 1 to 10 templates"
                       className={inputCls(errors.custom_templates)}
                     />
                   </Field>
-                  <Field label="Engineer Count" error={errors.custom_members}>
+                  <Field label="Number of Site Engineers" error={errors.custom_members}>
                     <input
                       type="number"
                       min="1"
                       value={form.custom_members}
                       onChange={set("custom_members")}
-                      placeholder="e.g. 5"
+                      placeholder="Enter number of site engineers"
                       className={inputCls(errors.custom_members)}
                     />
                   </Field>
-                  <Field label="Project Count" error={errors.custom_projects}>
+                  <Field label="Number of Projects" error={errors.custom_projects}>
                     <input
                       type="number"
                       min="1"
                       value={form.custom_projects}
                       onChange={set("custom_projects")}
-                      placeholder="e.g. 20"
+                      placeholder="Enter number of projects"
                       className={inputCls(errors.custom_projects)}
                     />
                   </Field>
-                  <Field label="Price (before GST)" error={errors.custom_price}>
+                  <Field label="Custom Annual Price (Rs.)" error={errors.custom_price}>
                     <input
                       type="number"
                       min="0"
                       value={form.custom_price}
                       onChange={set("custom_price")}
-                      placeholder="e.g. 50000"
+                      placeholder="Enter agreed annual price"
                       className={inputCls(errors.custom_price)}
                     />
                   </Field>

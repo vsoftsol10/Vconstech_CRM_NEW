@@ -24,9 +24,9 @@ const sendValidationError = (res, errors) =>
   res.status(400).json({ success: false, message: "Please fix the highlighted fields.", errors });
 
 const formattedCustomerSelect = `
-  id, lead_id, erp_customer_id, customer_name, company_name, phone, email,
+  id, lead_id, erp_customer_id, customer_name, company_name, phone, email, address, customer_role,
   renewal_date >= CURRENT_DATE AS active,
-  subscription_plan, subscription_amount, custom_users, custom_projects, custom_price, gst_rate, custom_features, sync_status,
+  subscription_plan, subscription_amount, custom_users, custom_projects, custom_templates, custom_price, gst_rate, custom_features, sync_status,
   subscription_start_date, subscription_end_date,
   payment_status, payment_method, assigned_employee, notes, channel,
   reminder_sent,
@@ -408,7 +408,7 @@ const updateCustomPlan = async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const updated = await client.query(`UPDATE customers SET subscription_plan='Advanced', custom_users=$1, custom_projects=$2, custom_price=$3, gst_rate=$4, custom_features=$5::jsonb, subscription_amount=$3, start_date=$6::date, renewal_date=$7::date, subscription_start_date=$6::date, subscription_end_date=$7::date, notes=$8 WHERE id=$9 RETURNING *`, [value.custom_users, value.custom_projects, value.custom_price, value.gst_rate, JSON.stringify(value.custom_features), startDate, endDate, value.notes || null, previous.id]);
+      const updated = await client.query(`UPDATE customers SET subscription_plan='Advanced', custom_users=$1, custom_projects=$2, custom_templates=$3, custom_price=$4, gst_rate=$5, custom_features=$6::jsonb, subscription_amount=$4, start_date=$7::date, renewal_date=$8::date, subscription_start_date=$7::date, subscription_end_date=$8::date, notes=$9 WHERE id=$10 RETURNING *`, [value.custom_users, value.custom_projects, value.custom_templates, value.custom_price, value.gst_rate, JSON.stringify(value.custom_features), startDate, endDate, value.notes || null, previous.id]);
       await client.query(`INSERT INTO subscription_history (customer_id, customer_name, plan_name, amount, action_type, start_date, end_date, metadata) VALUES ($1,$2,'Advanced',$3,'CUSTOM_PLAN_UPDATED',$4::date,$5::date,$6::jsonb)`, [previous.id, previous.customer_name, value.custom_price, startDate, endDate, JSON.stringify({ old: { custom_users: previous.custom_users, custom_projects: previous.custom_projects, custom_price: previous.custom_price, gst_rate: previous.gst_rate, custom_features: previous.custom_features }, new: { custom_users: value.custom_users, custom_projects: value.custom_projects, custom_price: value.custom_price, gst_rate: value.gst_rate, custom_features: value.custom_features } })]);
       await client.query("COMMIT");
       const erp = await syncSubscription({ db: pool, customer: updated.rows[0] });

@@ -19,9 +19,11 @@ const normalizeInput = (body = {}) => {
   return {
     customer_name: text(body.customer_name || body.name), company_name: text(body.company_name || body.companyName),
     email: text(body.email).toLowerCase(), phone: text(body.phone).replace(/\D/g, ""),
+    role: text(body.role), address: text(body.address), password: text(body.password),
     city: text(body.city || body.location), subscription_plan: plan, planKey, start, end,
     custom_users: advanced ? Number(body.customMembers ?? body.custom_users) : null,
     custom_projects: advanced ? Number(body.customProjectLimit ?? body.custom_projects) : null,
+    custom_templates: advanced ? Number(body.customTemplates ?? body.custom_templates) : null,
     custom_price: advanced ? Number(body.customPrice ?? body.custom_price) : null,
     gst_rate: advanced ? Number(body.gstRate ?? body.gst_rate ?? 18) : null,
     custom_features: advanced ? (body.customFeatures ?? body.custom_features ?? {}) : null,
@@ -29,15 +31,23 @@ const normalizeInput = (body = {}) => {
   };
 };
 
-const validate = (value) => {
+const validate = (value, { requireAccountDetails = false } = {}) => {
   const errors = {};
   if (value.customer_name.length < 3) errors.customer_name = "Name must be at least 3 characters";
+  if (requireAccountDetails) {
+    if (!value.company_name) errors.company_name = "Company name is required";
+    if (!value.city) errors.location = "City is required";
+    if (!value.role) errors.role = "Role is required";
+    if (!value.address) errors.address = "Address is required";
+    if (value.password.length < 6) errors.password = "Password must be at least 6 characters";
+  }
   if (!EMAIL.test(value.email)) errors.email = "Enter a valid email address";
   if (!PHONE.test(value.phone)) errors.phone = "Enter a valid 10-digit Indian mobile number";
   if (!['free trial', 'basic', 'premium', 'advanced'].includes(value.planKey)) errors.subscription_plan = "Select a valid plan";
   if (value.planKey === "advanced") {
     if (!Number.isInteger(value.custom_users) || value.custom_users < 1) errors.customMembers = "Engineers must be at least 1";
     if (!Number.isInteger(value.custom_projects) || value.custom_projects < 1) errors.customProjectLimit = "Projects must be at least 1";
+    if (!Number.isInteger(value.custom_templates) || value.custom_templates < 1 || value.custom_templates > 10) errors.customTemplates = "Templates must be between 1 and 10";
     if (!Number.isFinite(value.custom_price) || value.custom_price <= 0) errors.customPrice = "Custom yearly price must be greater than 0";
     if (!Number.isFinite(value.gst_rate) || value.gst_rate < 0 || value.gst_rate > 100) errors.gstRate = "GST must be between 0 and 100";
     if (!parseDate(value.start) || !parseDate(value.end) || value.end <= value.start) errors.endDate = "End date must be after start date";
@@ -69,7 +79,10 @@ const password = () => crypto.randomBytes(18).toString("base64url");
 const erpCreate = async (customer, temporaryPassword, request = fetch) => {
   const base = text(process.env.ERP_BASE_URL).replace(/\/$/, "");
   if (!base || !text(process.env.CRM_ERP_API_KEY)) throw new Error("ERP_BASE_URL and CRM_ERP_API_KEY must be configured");
-  const response = await request(`${base}/api/integrations/crm/users`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": process.env.CRM_ERP_API_KEY }, body: JSON.stringify({ crmCustomerId: customer.id, name: customer.customer_name, email: customer.email, phone: customer.phone, companyName: customer.company_name, address: customer.address, city: customer.city, gstNumber: customer.gst_number || "", plan: customer.subscription_plan, startDate: customer.start_date, endDate: customer.renewal_date, customMembers: customer.custom_users, customProjectLimit: customer.custom_projects, customPrice: customer.custom_price, temporaryPassword }) });
+  const plan = customer.subscription_plan;
+  const startDate = customer.subscription_start_date || customer.start_date;
+  const endDate = customer.subscription_end_date || customer.renewal_date;
+  const response = await request(`${base}/api/integrations/crm/users`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": process.env.CRM_ERP_API_KEY }, body: JSON.stringify({ crmCustomerId: customer.id, name: customer.customer_name, email: customer.email, phone: customer.phone, phoneNumber: customer.phone, role: customer.role || customer.customer_role, companyName: customer.company_name, address: customer.address, city: customer.city || customer.location, gstNumber: customer.gst_number || "", plan, package: plan, subscriptionPlan: plan, startDate, endDate, subscriptionStartedAt: startDate, subscriptionEndDate: endDate, trialStartDate: startDate, trialEndDate: endDate, customMembers: customer.custom_users, customProjectLimit: customer.custom_projects, customTemplateLimit: customer.custom_templates, customTemplates: customer.custom_templates, customPrice: customer.custom_price, mustChangePassword: true, temporaryPassword }) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data.erpUserId) throw new Error(data.message || `ERP create failed (${response.status})`);
   return { ...data, credentialsAlreadyExist: Boolean(data.credentialsAlreadyExist || data.existingUser || data.idempotent || data.alreadyExists) };
@@ -83,23 +96,23 @@ const erpResetPassword = async (erpUserId, temporaryPassword, request = fetch) =
 };
 
 const createManualCustomer = async ({ db, body, sendCredentials, request = fetch }) => {
-  const value = normalizeInput(body); const errors = validate(value);
+  const value = normalizeInput(body); const errors = validate(value, { requireAccountDetails: true });
   if (Object.keys(errors).length) { const e = new Error("Please fix the highlighted fields."); e.status = 400; e.errors = errors; throw e; }
   await validateFeatureSelection(db, value);
   const duplicate = await db.query("SELECT id FROM customers WHERE LOWER(email) = $1 OR regexp_replace(phone, '\\D', '', 'g') = $2 LIMIT 1", [value.email, value.phone]);
   if (duplicate.rows[0]) { const e = new Error("A customer with this email or phone already exists."); e.status = 409; throw e; }
   const { start, end } = datesFor(value); const startDate = dateOnly(start); const endDate = dateOnly(end);
-  const inserted = await db.query(`INSERT INTO customers (customer_name, company_name, phone, email, location, subscription_plan, subscription_amount, start_date, renewal_date, subscription_start_date, subscription_end_date, subscription_status, payment_status, custom_users, custom_projects, custom_price, gst_rate, custom_features, sync_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$8::date,$9::date,'Subscription Active','Subscription Active',$10,$11,$12,$13,$14,'ERP_PENDING',$15) RETURNING *`, [value.customer_name, value.company_name || null, value.phone, value.email, value.city || null, value.subscription_plan, value.custom_price || 0, startDate, endDate, value.custom_users, value.custom_projects, value.custom_price, value.gst_rate, value.custom_features ? JSON.stringify(value.custom_features) : null, value.notes || null]);
+  const inserted = await db.query(`INSERT INTO customers (customer_name, company_name, phone, email, address, customer_role, location, subscription_plan, subscription_amount, start_date, renewal_date, subscription_start_date, subscription_end_date, subscription_status, payment_status, custom_users, custom_projects, custom_templates, custom_price, gst_rate, custom_features, sync_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11::date,$10::date,$11::date,'Subscription Active','Subscription Active',$12,$13,$14,$15,$16,$17,'ERP_PENDING',$18) RETURNING *`, [value.customer_name, value.company_name || null, value.phone, value.email, value.address, value.role, value.city || null, value.subscription_plan, value.custom_price || 0, startDate, endDate, value.custom_users, value.custom_projects, value.custom_templates, value.custom_price, value.gst_rate, value.custom_features ? JSON.stringify(value.custom_features) : null, value.notes || null]);
   const customer = inserted.rows[0];
   await db.query("INSERT INTO subscription_history (customer_id, customer_name, plan_name, amount, action_type, start_date, end_date) VALUES ($1,$2,$3,$4,'CREATED',$5::date,$6::date)", [customer.id, customer.customer_name, customer.subscription_plan, customer.custom_price || 0, startDate, endDate]);
-  await db.query("INSERT INTO crm_erp_customer_mappings (lead_id, customer_id, status, request_payload) VALUES (NULL,$1,'ERP_PENDING',$2)", [customer.id, JSON.stringify({ source: "manual" })]);
+  await db.query("INSERT INTO crm_erp_customer_mappings (lead_id, customer_id, status, request_payload) VALUES (NULL,$1,'ERP_PENDING',$2)", [customer.id, JSON.stringify({ source: "manual", role: value.role, address: value.address, customTemplates: value.custom_templates })]);
   if (!enabled()) return { customer: { ...customer, sync_status: "ERP_PENDING" }, message: "Saved in CRM. ERP sync is pending because ERP creation is disabled." };
-  return syncCustomer({ db, customer, sendCredentials, request });
+  return syncCustomer({ db, customer, sendCredentials, request, requestedPassword: value.password });
 };
 
-const syncCustomer = async ({ db, customer, sendCredentials, request = fetch }) => {
+const syncCustomer = async ({ db, customer, sendCredentials, request = fetch, requestedPassword }) => {
   if (!enabled()) { const e = new Error("ERP creation is disabled. Enable ERP_CREATE_USER_ENABLED to sync credentials."); e.status = 409; throw e; }
-  const temporaryPassword = password();
+  const temporaryPassword = requestedPassword || password();
   try {
     const erp = await erpCreate(customer, temporaryPassword, request);
     await db.query("UPDATE customers SET erp_user_id=$1, erp_customer_id=$2, sync_status='SYNCED', sync_error=NULL, sync_updated_at=NOW() WHERE id=$3", [erp.erpUserId, erp.clientId || null, customer.id]);
