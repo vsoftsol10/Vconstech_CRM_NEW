@@ -53,9 +53,9 @@ const requireAuthenticated = (req, res, next) => {
   return next();
 };
 
-const requireAdminOrSales = (req, res, next) => {
-  const department = String(req.user?.department || "").trim().toLowerCase();
-  const roleValues = [req.user?.role, req.user?.designation]
+const isAdminOrSales = (user) => {
+  const department = String(user?.department || "").trim().toLowerCase();
+  const roleValues = [user?.role, user?.designation]
     .filter(Boolean)
     .map((value) => String(value).trim().toLowerCase());
   const allowedDepartments = new Set(["admin", "sales"]);
@@ -63,7 +63,11 @@ const requireAdminOrSales = (req, res, next) => {
     "admin", "administrator", "sales", "sales executive", "sales manager", "sales representative",
   ]);
 
-  if (!allowedDepartments.has(department) && !roleValues.some((value) => allowedRoles.has(value))) {
+  return allowedDepartments.has(department) || roleValues.some((value) => allowedRoles.has(value));
+};
+
+const requireAdminOrSales = (req, res, next) => {
+  if (!isAdminOrSales(req.user)) {
     return res.status(403).json({ success: false, message: "Only Admin or Sales roles can modify customer subscriptions." });
   }
   return next();
