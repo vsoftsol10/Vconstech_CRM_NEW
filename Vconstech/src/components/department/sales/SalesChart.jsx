@@ -14,14 +14,14 @@ const SalesChart = ({ data = [], loading = false }) => (
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.4, delay: 0.1 }}
-    className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm"
+    className="min-w-0 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm"
   >
     <h2 className="text-[16px] font-bold text-[#111111] mb-5">Sales Performance</h2>
 
     {loading ? (
       <div className="h-[280px] rounded-xl bg-gray-50 animate-pulse" />
     ) : data.length > 0 ? (
-      <ResponsiveContainer width="100%" height={280}>
+      <ResponsiveContainer width="100%" height={280} minWidth={0} minHeight={1}>
         <BarChart
           data={data}
           margin={{ top: 10, right: 20, left: -10, bottom: 0 }}

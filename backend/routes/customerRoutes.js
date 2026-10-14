@@ -20,7 +20,7 @@ router.put("/:id/subscription", requireAuthenticated, customerController.updateC
 router.get("/:id", requireAuthenticated, customerController.getCustomerById);
 router.put("/:id", requireAuthenticated, customerController.updateCustomer);
 router.patch("/:id/status", requireAuthenticated, requireAdminOrSales, customerController.updateCustomerStatus);
-router.delete("/:id", requireAuthenticated, requireAdminOrSales, customerController.deleteCustomer);
+router.delete("/:id", requireAuthenticated, customerController.deleteCustomer);
 
 router.get("/:id/renew-preview", requireAuthenticated, requireAdminOrSales, customerController.previewRenewal);
 router.post("/:id/renew", requireAuthenticated, requireAdminOrSales, customerController.renewSubscription);

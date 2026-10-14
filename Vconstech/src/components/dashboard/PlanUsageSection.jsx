@@ -110,8 +110,8 @@ export default function PlanUsageSection({ customers = [], leads = [] }) {
           </div>
 
           {/* PIE */}
-          <div className="h-[180px] min-w-[180px] flex-1">
-            <ResponsiveContainer width="100%" height={180} minWidth={180}>
+          <div className="h-[180px] min-w-0 flex-1">
+            <ResponsiveContainer width="100%" height={180} minWidth={0} minHeight={1}>
               <PieChart>
                 <Pie
   data={chartData}

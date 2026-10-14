@@ -141,7 +141,7 @@ const OverPerformanceChart = () => {
       )}
 
       {!loading && !error && data.length > 0 && (
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={220} minWidth={0} minHeight={1}>
           <BarChart data={data} barCategoryGap="45%" barGap={4}>
             <CartesianGrid vertical={false} stroke="#f0f0f0" strokeDasharray="0" />
             <XAxis

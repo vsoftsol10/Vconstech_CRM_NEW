@@ -333,7 +333,7 @@ const deleteLocalCustomer = async (id) => {
     await client.query("DELETE FROM customers WHERE id = $1", [id]);
 
     if (customer.lead_id) {
-      await client.query("UPDATE leads SET is_customer = false WHERE id = $1", [customer.lead_id]);
+      await client.query("DELETE FROM leads WHERE id = $1", [customer.lead_id]);
     }
 
     await client.query("COMMIT");

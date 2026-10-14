@@ -120,6 +120,7 @@ const ActiveUsersChart = ({ data = [], selectedYear, yearOptions = [], onYearCha
       {/* Chart */}
       <div className="
         w-full
+        min-w-0
         h-[300px]
       ">
 
@@ -131,6 +132,8 @@ const ActiveUsersChart = ({ data = [], selectedYear, yearOptions = [], onYearCha
         <ResponsiveContainer
           width="100%"
           height="100%"
+          minWidth={0}
+          minHeight={1}
         >
 
           <LineChart
