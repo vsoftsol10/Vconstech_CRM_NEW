@@ -291,6 +291,23 @@ const convertLeadToCustomer = async (req, res) => {
       alreadyConverted = true;
     } else {
       const plan = await getPlanForSubscription(client, lead.plan);
+      const isAdvanced = String(plan.name || lead.plan || "").toLowerCase().includes("advanced");
+      const customMembers = isAdvanced ? Number(req.body?.customMembers ?? lead.custom_members) : null;
+      const customProjects = isAdvanced ? Number(req.body?.customProjectLimit ?? lead.custom_project_limit) : null;
+      const customTemplates = isAdvanced ? Number(req.body?.customTemplateLimit ?? lead.custom_template_limit) : null;
+      const customPrice = isAdvanced ? Number(req.body?.customPrice ?? lead.custom_price) : null;
+      const gstRate = isAdvanced ? Number(req.body?.gstRate ?? 18) : null;
+      if (isAdvanced && (!Number.isInteger(customMembers) || customMembers < 1 ||
+          !Number.isInteger(customProjects) || customProjects < 1 ||
+          !Number.isInteger(customTemplates) || customTemplates < 1 || customTemplates > 10 ||
+          !Number.isFinite(customPrice) || customPrice <= 0 ||
+          !Number.isFinite(gstRate) || gstRate < 0 || gstRate > 100)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          success: false,
+          message: "Advanced plan requires valid engineers, projects, templates (1–10), and annual price.",
+        });
+      }
       const { subscription_start_date, subscription_end_date } =
         calculateSubscriptionDates(plan.durationInDays);
 
@@ -299,8 +316,8 @@ const convertLeadToCustomer = async (req, res) => {
          (lead_id, customer_name, company_name, phone, email,
           channel, subscription_plan, subscription_amount,
           start_date, renewal_date, subscription_start_date, subscription_end_date, payment_status,
-          payment_method, assigned_employee, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          payment_method, assigned_employee, notes, custom_users, custom_projects, custom_price, gst_rate)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
          RETURNING *`,
         [
           lead.id,
@@ -310,7 +327,7 @@ const convertLeadToCustomer = async (req, res) => {
           lead.email,
           lead.channel,
           plan.name,
-          plan.price,
+          isAdvanced ? customPrice : plan.price,
           formatDate(subscription_start_date),
           formatDate(subscription_end_date),
           subscription_start_date,
@@ -319,10 +336,15 @@ const convertLeadToCustomer = async (req, res) => {
           null,
           null,
           lead.notes || lead.requirements,
+          customMembers,
+          customProjects,
+          customPrice,
+          gstRate,
         ]
       );
 
       customer = customerResult.rows[0];
+      if (isAdvanced) customer.custom_templates = customTemplates;
 
       await client.query(
         `INSERT INTO subscription_history
@@ -332,7 +354,7 @@ const convertLeadToCustomer = async (req, res) => {
           customer.id,
           lead.full_name,
           plan.name,
-          plan.price,
+          isAdvanced ? customPrice : plan.price,
           "NEW",
           formatDate(subscription_start_date),
           formatDate(subscription_end_date),

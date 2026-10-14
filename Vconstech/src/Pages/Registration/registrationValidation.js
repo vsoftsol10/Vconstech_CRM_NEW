@@ -68,7 +68,14 @@ export const validateRegistrationForm = (userData) => {
   else if (userData.address.length < 10) errors.address = "Please enter a complete address";
   if (!userData.role) errors.role = "Please select a role";
   if (!userData.package) errors.package = "Please select a package";
-  if (userData.package === "Advanced") errors.customMembers = validateCustomMembers(userData.customMembers);
+  if (userData.package === "Advanced") {
+    errors.customMembers = validateCustomMembers(userData.customMembers);
+    for (const [field, label] of [["customProjectLimit", "Project limit"], ["customTemplateLimit", "Template limit"]]) {
+      const value = Number(userData[field]);
+      if (!Number.isInteger(value) || value < 1 || (field === "customTemplateLimit" && value > 10)) errors[field] = `${label} is missing or invalid`;
+    }
+    if (!Number.isFinite(Number(userData.customPrice)) || Number(userData.customPrice) <= 0) errors.customPrice = "Annual price is missing or invalid";
+  }
 
   return Object.fromEntries(Object.entries(errors).filter(([, value]) => value !== ""));
 };

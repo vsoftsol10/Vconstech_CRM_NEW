@@ -1,6 +1,7 @@
 const pool = require("../../config/database");
 const { sendErpInvitationEmail } = require("../../utils/emailUtil");
 const erpApiClient = require("./erpApiClient");
+const erpSupabaseCustomerService = require("../../services/erpSupabaseCustomerService");
 
 const pickFirst = (...values) =>
   values.find((value) => value !== undefined && value !== null && value !== "");
@@ -21,7 +22,21 @@ const buildInvitationPayload = ({ lead, customer }) => ({
     channel: customer.channel || lead.channel,
     subscriptionPlan: customer.subscription_plan || lead.plan,
     paymentStatus: customer.payment_status,
+    customMembers: customer.custom_users || null,
+    customProjectLimit: customer.custom_projects || null,
+    customTemplateLimit: customer.custom_templates || null,
+    customPrice: customer.custom_price || null,
+    gstRate: customer.gst_rate || null,
   },
+  customPlan: String(customer.subscription_plan || lead.plan || "").toLowerCase().includes("advanced")
+    ? {
+        customMembers: customer.custom_users,
+        customProjectLimit: customer.custom_projects,
+        customTemplateLimit: customer.custom_templates,
+        customPrice: customer.custom_price,
+        gstRate: customer.gst_rate,
+      }
+    : null,
 });
 
 const isLegacyCrmInvitationId = (invitationId) =>
@@ -329,6 +344,11 @@ const toPublicInvitation = (row) => {
       channel: pickFirst(customerPayload.channel, row.channel),
       subscriptionPlan: pickFirst(customerPayload.subscriptionPlan, row.subscription_plan),
       paymentStatus: pickFirst(customerPayload.paymentStatus, row.payment_status),
+      customMembers: pickFirst(customerPayload.customMembers, payload.customPlan?.customMembers, row.custom_users),
+      customProjectLimit: pickFirst(customerPayload.customProjectLimit, payload.customPlan?.customProjectLimit, row.custom_projects),
+      customTemplateLimit: pickFirst(customerPayload.customTemplateLimit, payload.customPlan?.customTemplateLimit),
+      customPrice: pickFirst(customerPayload.customPrice, payload.customPlan?.customPrice, row.custom_price),
+      gstRate: pickFirst(customerPayload.gstRate, payload.customPlan?.gstRate, row.gst_rate),
     },
   };
 };
@@ -336,7 +356,8 @@ const toPublicInvitation = (row) => {
 const getRegistrationInvitation = async (invitationId) => {
   const result = await pool.query(
     `SELECT m.*, c.customer_name, c.company_name, c.email, c.phone, c.channel,
-            c.subscription_plan, c.payment_status, l.address, l.location
+            c.subscription_plan, c.payment_status, c.custom_users, c.custom_projects,
+            c.custom_price, c.gst_rate, m.request_payload, l.address, l.location
      FROM crm_erp_customer_mappings m
      JOIN customers c ON c.id = m.customer_id
      LEFT JOIN leads l ON l.id = m.lead_id
@@ -403,7 +424,21 @@ const markInvitationRegistered = async ({
       status: "REGISTERED",
     });
 
+    const customPlan = mapping.request_payload?.customPlan;
+    if (String(mapping.request_payload?.customer?.subscriptionPlan || "").toLowerCase().includes("advanced") && customPlan) {
+      await client.query(
+        `UPDATE customers
+         SET custom_users = $1, custom_projects = $2, custom_price = $3,
+             gst_rate = $4, subscription_amount = $3
+         WHERE id = $5`,
+        [customPlan.customMembers, customPlan.customProjectLimit, customPlan.customPrice, customPlan.gstRate ?? 18, mapping.customer_id]
+      );
+    }
+
     await client.query("COMMIT");
+    if (customPlan && erpUserId && erpSupabaseCustomerService.isConfigured()) {
+      await erpSupabaseCustomerService.updateAdvancedPlan({ erpUserId, crmCustomerId: mapping.customer_id, ...customPlan });
+    }
     return { success: true, invitationId, status: "REGISTERED" };
   } catch (error) {
     await client.query("ROLLBACK");

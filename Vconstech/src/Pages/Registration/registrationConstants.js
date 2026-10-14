@@ -10,6 +10,9 @@ export const INITIAL_FORM = {
   address: "",
   package: "Free",
   customMembers: "",
+  customProjectLimit: "",
+  customTemplateLimit: "",
+  customPrice: "",
 };
 
 export const ROLES = [{ value: "Admin", label: "Admin" }];

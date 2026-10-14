@@ -218,21 +218,26 @@ const RegistrationForm = ({ initialData, onSubmit, onSuccess }) => {
             />
 
             {userData.package === "Advanced" && (
-              <InputField
-                field="customMembers"
-                label="Number of Site Engineers"
-                type="number"
-                placeholder="Enter number of site engineers"
-                icon={Users}
-                value={userData.customMembers}
-                isFocused={isFocused.customMembers}
-                error={fieldErrors.customMembers}
-                onChange={handleFieldChange}
-                onFocus={handleFocus}
-                onBlur={handleFocus}
-                disabled={fieldsDisabled}
-                className="bg-gray-100 text-gray-500 cursor-not-allowed"
-              />
+              <>
+                {[["customMembers", "Number of Site Engineers"], ["customProjectLimit", "Number of Projects"], ["customTemplateLimit", "Number of Templates"], ["customPrice", "Custom Annual Price (Rs.)"]].map(([field, label]) => (
+                  <InputField
+                    key={field}
+                    field={field}
+                    label={label}
+                    type="number"
+                    placeholder="Set by CRM sales during conversion"
+                    icon={Users}
+                    value={userData[field]}
+                    isFocused={isFocused[field]}
+                    error={fieldErrors[field]}
+                    onChange={handleFieldChange}
+                    onFocus={handleFocus}
+                    onBlur={handleFocus}
+                    disabled={fieldsDisabled}
+                    className="bg-gray-100 text-gray-500 cursor-not-allowed"
+                  />
+                ))}
+              </>
             )}
 
             <InputField

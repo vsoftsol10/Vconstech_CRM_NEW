@@ -47,6 +47,10 @@ const validateLeadPayload = (body) => {
     email: normalizeEmail(body.email),
     date: normalizeText(body.date),
     plan: body.plan?.value || body.plan || null,
+    customMembers: body.customMembers === "" || body.customMembers == null ? null : Number(body.customMembers),
+    customProjectLimit: body.customProjectLimit === "" || body.customProjectLimit == null ? null : Number(body.customProjectLimit),
+    customTemplateLimit: body.customTemplateLimit === "" || body.customTemplateLimit == null ? null : Number(body.customTemplateLimit),
+    customPrice: body.customPrice === "" || body.customPrice == null ? null : Number(body.customPrice),
     address: normalizeText(body.address),
     location: normalizeText(body.location),
     requirements: normalizeText(body.requirements),
@@ -63,6 +67,12 @@ const validateLeadPayload = (body) => {
   else if (!EMAIL_PATTERN.test(values.email)) errors.email = "Enter a valid email address";
   if (!values.status) errors.status = "Status is required";
   if (values.status !== "new" && !values.plan) errors.plan = "Plan is required";
+  if (String(values.plan || "").toLowerCase().includes("advanced")) {
+    if (!Number.isInteger(values.customMembers) || values.customMembers < 1) errors.customMembers = "Enter at least 1 site engineer";
+    if (!Number.isInteger(values.customProjectLimit) || values.customProjectLimit < 1) errors.customProjectLimit = "Enter at least 1 project";
+    if (!Number.isInteger(values.customTemplateLimit) || values.customTemplateLimit < 1 || values.customTemplateLimit > 10) errors.customTemplateLimit = "Enter 1 to 10 templates";
+    if (!Number.isFinite(values.customPrice) || values.customPrice <= 0) errors.customPrice = "Enter the agreed annual price";
+  }
   if (!values.channel) errors.channel = "Channel is required";
   if (!values.date) errors.date = "Date is required";
   else if (Number.isNaN(new Date(values.date).getTime())) errors.date = "Enter a valid date";
@@ -144,6 +154,10 @@ const insertLead = async (db, values, reminderFields, options = {}) => {
     "follow_up_date",
     "follow_up_time",
     "reminder_enabled",
+    "custom_members",
+    "custom_project_limit",
+    "custom_template_limit",
+    "custom_price",
   ];
   const params = [
     values.fullName,
@@ -161,6 +175,10 @@ const insertLead = async (db, values, reminderFields, options = {}) => {
     reminderFields.followUpDate || null,
     reminderFields.followUpTime || null,
     reminderFields.reminderEnabled,
+    values.customMembers,
+    values.customProjectLimit,
+    values.customTemplateLimit,
+    values.customPrice,
   ];
 
   if (options.previousLeadId) {
@@ -516,6 +534,10 @@ const updateLead = async (req, res) => {
            follow_up_date=$13,
            follow_up_time=$14,
            reminder_enabled=$15,
+           custom_members=$16,
+           custom_project_limit=$17,
+           custom_template_limit=$18,
+           custom_price=$19,
            follow_up_reminder_sent_at = CASE
              WHEN follow_up_date IS DISTINCT FROM $13::date
                OR follow_up_time IS DISTINCT FROM $14::time
@@ -530,7 +552,7 @@ const updateLead = async (req, res) => {
              THEN NULL
              ELSE follow_up_reminder_sent_for_date
            END
-       WHERE id=$16
+       WHERE id=$20
        RETURNING *`,
       [
         values.fullName,
@@ -548,6 +570,10 @@ const updateLead = async (req, res) => {
         followUpDate || null,
         followUpTime || null,
         reminderEnabled,
+        values.customMembers,
+        values.customProjectLimit,
+        values.customTemplateLimit,
+        values.customPrice,
         id,
       ]
     );

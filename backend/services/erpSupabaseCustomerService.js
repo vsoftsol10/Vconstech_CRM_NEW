@@ -315,6 +315,27 @@ const createErpUser = async (payload = {}, temporaryPassword) => {
   }
 };
 
+const updateAdvancedPlan = async ({ erpUserId, crmCustomerId, customMembers, customProjectLimit, customTemplateLimit, customPrice }) => {
+  const pool = getErpPool();
+  if (!pool) return null;
+  const result = await pool.query(
+    `UPDATE "User"
+     SET package = 'Advanced', "subscriptionPlan" = 'Advanced', "customMembers" = $1,
+         "customProjectLimit" = $2, "customTemplateLimit" = $3, "customPrice" = $4,
+         "updatedAt" = NOW()
+     WHERE ($5::text <> '' AND id = $5)
+        OR ($6::text <> '' AND "crmCustomerId" = $6)
+     RETURNING id`,
+    [customMembers, customProjectLimit, customTemplateLimit, customPrice, String(erpUserId || ""), String(crmCustomerId || "")]
+  );
+  if (!result.rowCount) {
+    const error = new Error("Registered ERP user was not found while saving the Advanced plan limits.");
+    error.statusCode = 404;
+    throw error;
+  }
+  return { updated: true, erpUserId: result.rows[0].id };
+};
+
 const createCustomer = async (payload = {}) => {
   const pool = getErpPool();
   if (!pool) return null;
@@ -501,6 +522,7 @@ module.exports = {
   getCustomer,
   getCustomers,
   isConfigured,
+  updateAdvancedPlan,
   updateCustomer,
   updateCustomerStatus,
 };

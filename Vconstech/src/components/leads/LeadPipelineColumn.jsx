@@ -34,6 +34,14 @@ const LeadPipelineColumn = ({ lead, onConverted, activeStage, onRefresh }) => {
   const [editingCustomerId, setEditingCustomerId] = useState(null);
   const [converting, setConverting] = useState(false);
   const [converted, setConverted] = useState(false);
+  const [showAdvancedConversion, setShowAdvancedConversion] = useState(false);
+  const [advancedPlan, setAdvancedPlan] = useState({
+    customMembers: lead?.custom_members ?? "",
+    customProjectLimit: lead?.custom_project_limit ?? "",
+    customTemplateLimit: lead?.custom_template_limit ?? "",
+    customPrice: lead?.custom_price ?? "",
+  });
+  const [conversionError, setConversionError] = useState("");
 
   const name = lead?.name || lead?.full_name || "Unknown";
   const company = lead?.company || "-";
@@ -133,12 +141,25 @@ const handleConvertToCustomer = async () => {
     return;
   }
 
+  if (plan.includes("advanced")) {
+    setShowAdvancedConversion(true);
+    return;
+  }
+
+  await submitLeadConversion();
+};
+
+const submitLeadConversion = async (customPlan = null) => {
+  if (converting) return;
+
   setConverting(true);
   try {
     await axios.post(
-      `${API_BASE_URL}/api/leads/${lead.id}/convert-to-customer`
+      `${API_BASE_URL}/api/leads/${lead.id}/convert-to-customer`,
+      customPlan || {}
     );
 
+    setShowAdvancedConversion(false);
     setConverted(true);
     onConverted?.(lead.id);
     alert("Lead converted successfully.Check Customer Page");
@@ -148,10 +169,25 @@ const handleConvertToCustomer = async () => {
       err.response?.status === 409
         ? err.response?.data?.message || "This lead has already been converted to a customer."
         : "Failed to convert lead";
-    alert(message);
+    setConversionError(message);
+    if (!showAdvancedConversion) alert(message);
   } finally {
     setConverting(false);
   }
+};
+
+const handleAdvancedConversion = (event) => {
+  event.preventDefault();
+  const values = Object.fromEntries(Object.entries(advancedPlan).map(([key, value]) => [key, Number(value)]));
+  if (!Number.isInteger(values.customMembers) || values.customMembers < 1 ||
+      !Number.isInteger(values.customProjectLimit) || values.customProjectLimit < 1 ||
+      !Number.isInteger(values.customTemplateLimit) || values.customTemplateLimit < 1 || values.customTemplateLimit > 10 ||
+      !Number.isFinite(values.customPrice) || values.customPrice <= 0) {
+    setConversionError("Enter valid engineer, project, template (1–10), and annual price values.");
+    return;
+  }
+  setConversionError("");
+  submitLeadConversion({ ...values, gstRate: 18 });
 };
 
 
@@ -398,6 +434,27 @@ const handleConvertToCustomer = async () => {
           }}
           onRefresh={onRefresh}
         />
+      )}
+
+      {showAdvancedConversion && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <form onSubmit={handleAdvancedConversion} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="mb-1 text-xl font-semibold">Customize Advanced plan</h2>
+            <p className="mb-5 text-sm text-gray-500">These values will be saved with the CRM customer and sent to ERP registration.</p>
+            {conversionError && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{conversionError}</p>}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {[["customMembers", "Number of Site Engineers"], ["customProjectLimit", "Number of Projects"], ["customTemplateLimit", "Number of Templates"], ["customPrice", "Custom Annual Price (Rs.)"]].map(([key, label]) => (
+                <label key={key} className="text-sm font-medium text-gray-700">{label}
+                  <input required min="1" max={key === "customTemplateLimit" ? "10" : undefined} step="1" type="number" value={advancedPlan[key]} onChange={(event) => setAdvancedPlan((prev) => ({ ...prev, [key]: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 p-3" />
+                </label>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => { setShowAdvancedConversion(false); setConversionError(""); }} className="rounded-lg border px-4 py-2">Cancel</button>
+              <button type="submit" disabled={converting} className="rounded-lg bg-[#F5C518] px-4 py-2 font-semibold disabled:opacity-60">{converting ? "Converting..." : "Convert lead"}</button>
+            </div>
+          </form>
+        </div>
       )}
      
     </>

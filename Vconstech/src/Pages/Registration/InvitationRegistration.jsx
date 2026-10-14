@@ -53,6 +53,10 @@ const InvitationRegistration = () => {
     crmCustomerId: invitation?.crmCustomerId || "",
     role: "Admin",
     package: normalizePackage(invitation?.customer?.subscriptionPlan),
+    customMembers: invitation?.customer?.customMembers ?? "",
+    customProjectLimit: invitation?.customer?.customProjectLimit ?? "",
+    customTemplateLimit: invitation?.customer?.customTemplateLimit ?? "",
+    customPrice: invitation?.customer?.customPrice ?? "",
     city: invitation?.customer?.location || invitation?.customer?.city || "",
     address: invitation?.customer?.address || "",
     password: "",
@@ -74,6 +78,9 @@ const InvitationRegistration = () => {
         address: formData.address,
         package: formData.package,
         customMembers: formData.package === "Advanced" ? formData.customMembers : null,
+        customProjectLimit: formData.package === "Advanced" ? formData.customProjectLimit : null,
+        customTemplateLimit: formData.package === "Advanced" ? formData.customTemplateLimit : null,
+        customPrice: formData.package === "Advanced" ? formData.customPrice : null,
       }),
     });
 
@@ -90,6 +97,15 @@ const InvitationRegistration = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId: registerData.registration?.user?.id,
+        crmCustomerId: invitation?.crmCustomerId,
+        crmLeadId: invitation?.crmLeadId,
+        erpCustomerId: registerData.registration?.customer?.id || registerData.registration?.user?.erpCustomerId,
+        erpClientId: registerData.registration?.user?.clientId,
+        plan: formData.package,
+        customMembers: formData.package === "Advanced" ? Number(formData.customMembers) : null,
+        customProjectLimit: formData.package === "Advanced" ? Number(formData.customProjectLimit) : null,
+        customTemplateLimit: formData.package === "Advanced" ? Number(formData.customTemplateLimit) : null,
+        customPrice: formData.package === "Advanced" ? Number(formData.customPrice) : null,
       }),
     });
 

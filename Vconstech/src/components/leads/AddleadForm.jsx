@@ -136,6 +136,7 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
   const [form, setForm] = useState({
     fullName: "", company: "", channel: DEFAULT_CHANNEL, status: null,
     phone: "", email: "", date: "", plan: { value: "none", label: "None" },
+    customMembers: "", customProjectLimit: "", customTemplateLimit: "", customPrice: "",
     assignedTo: null, address: "", location: "", requirements: "", workNotes: "",
   });
   const [showWorkUpdate, setShowWorkUpdate] = useState(false);
@@ -191,6 +192,10 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
         channel:      toSelectOption(CHANNELS, editData.channel),
         status:       toSelectOption(STATUSES, editData.status),
         plan:         toSelectOption(PLANS, editData.plan),
+        customMembers: editData.custom_members ?? "",
+        customProjectLimit: editData.custom_project_limit ?? "",
+        customTemplateLimit: editData.custom_template_limit ?? "",
+        customPrice: editData.custom_price ?? "",
         assignedTo:   assignableMembers.find(m => String(m.value) === String(editData.assigned_to)) || null,
         workNotes:    editData.work_notes   || "",
         phone:        editData.phone        || "",
@@ -224,7 +229,7 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
   };
   // FIX: pass the full option object — don't extract .value here; extract it only on submit
   const setSelect = (field) => (val) => {
-     setForm(f => ({ ...f, [field]: val }));   
+     setForm(f => ({ ...f, [field]: val, ...(field === "plan" && val?.value !== "advanced" ? { customMembers: "", customProjectLimit: "", customTemplateLimit: "", customPrice: "" } : {}) }));
    setErrors(er => ({ ...er, [field]: "" }));  
    setFormError(""); };
 
@@ -239,6 +244,12 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
     else if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(form.email)) e.email = "Enter a valid email address";
     if (!form.status)                                              e.status       = "Status is required";
     if (form.status?.value !== "new" && !form.plan)                e.plan         = "Plan is required";
+    if (form.plan?.value === "advanced") {
+      if (!Number.isInteger(Number(form.customMembers)) || Number(form.customMembers) < 1) e.customMembers = "Enter at least 1 site engineer";
+      if (!Number.isInteger(Number(form.customProjectLimit)) || Number(form.customProjectLimit) < 1) e.customProjectLimit = "Enter at least 1 project";
+      if (!Number.isInteger(Number(form.customTemplateLimit)) || Number(form.customTemplateLimit) < 1 || Number(form.customTemplateLimit) > 10) e.customTemplateLimit = "Enter 1 to 10 templates";
+      if (!Number.isFinite(Number(form.customPrice)) || Number(form.customPrice) <= 0) e.customPrice = "Enter the agreed annual price";
+    }
     if (!form.channel)                                             e.channel      = "Channel is required";
     if (!form.date)                                                e.date         = "Date is required";
     else if (Number.isNaN(new Date(form.date).getTime()))          e.date         = "Enter a valid date";
@@ -254,6 +265,10 @@ export default function AddLeadModal({ onClose, onSubmit, editData = null }) {
     channel:    form.channel?.value    || null,
     status:     form.status?.value     || null,
     plan:       form.plan?.value       || null,
+    customMembers: form.plan?.value === "advanced" ? Number(form.customMembers) : null,
+    customProjectLimit: form.plan?.value === "advanced" ? Number(form.customProjectLimit) : null,
+    customTemplateLimit: form.plan?.value === "advanced" ? Number(form.customTemplateLimit) : null,
+    customPrice: form.plan?.value === "advanced" ? Number(form.customPrice) : null,
   });
 
   const checkDuplicates = async () => {
@@ -429,6 +444,18 @@ setFormError("");
                 </Field>
               )}
             </div>
+            {form.plan?.value === "advanced" && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <h3 className="mb-3 text-sm font-semibold text-gray-800">Advanced plan customization</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {[["customMembers", "Number of Site Engineers", "Enter engineer count"], ["customProjectLimit", "Number of Projects", "Enter project count"], ["customTemplateLimit", "Number of Templates", "Enter 1 to 10 templates"], ["customPrice", "Custom Annual Price (Rs.)", "Enter agreed annual price"]].map(([key, label, placeholder]) => (
+                    <Field key={key} label={label} error={errors[key]}>
+                      <input type="number" min="1" max={key === "customTemplateLimit" ? "10" : undefined} step="1" value={form[key]} onChange={set(key)} placeholder={placeholder} className={inputCls(errors[key])} />
+                    </Field>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                <Field label="Location" error={errors.location}>
               <input type="text" value={form.location} onChange={set("location")}
