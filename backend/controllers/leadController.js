@@ -591,13 +591,32 @@ const updateLead = async (req, res) => {
 
 // ── DELETE lead ─────────────────────────────────────────────────────────────
 const deleteLead = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    await pool.query("DELETE FROM leads WHERE id = $1", [id]);
-    res.json({ success: true, message: "Lead deleted" });
+    await client.query("BEGIN");
+    const lead = await client.query("SELECT id FROM leads WHERE id = $1 FOR UPDATE", [id]);
+    if (!lead.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ success: false, message: "Lead not found" });
+    }
+
+    const customers = await client.query("SELECT id FROM customers WHERE lead_id = $1 FOR UPDATE", [id]);
+    for (const customer of customers.rows) {
+      await client.query("DELETE FROM subscription_history WHERE customer_id = $1", [customer.id]);
+      await client.query("DELETE FROM crm_erp_customer_mappings WHERE customer_id = $1", [customer.id]);
+      await client.query("DELETE FROM crm_erp_status_events WHERE crm_customer_id::text = $1::text", [customer.id]);
+    }
+    await client.query("DELETE FROM customers WHERE lead_id = $1", [id]);
+    await client.query("DELETE FROM leads WHERE id = $1", [id]);
+    await client.query("COMMIT");
+    res.json({ success: true, message: "Lead and linked CRM customer deleted" });
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     console.error(err);
     res.status(500).json({ success: false, message: "Delete failed" });
+  } finally {
+    client.release();
   }
 };
 

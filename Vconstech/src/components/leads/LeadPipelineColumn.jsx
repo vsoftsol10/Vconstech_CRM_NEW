@@ -117,17 +117,17 @@ const handleDeleteCustomer = async () => {
   }
 
   const confirmDelete = window.confirm(
-    `Delete converted customer ${name}?`
+    `Delete lead ${name} and its linked CRM customer?`
   );
 
   if (!confirmDelete) return;
 
   try {
     await axios.delete(
-      `${API_BASE_URL}/api/customers/${customerId}`
+      `${API_BASE_URL}/api/leads/${lead.id}`
     );
 
-    alert("Converted customer deleted successfully");
+    alert("Lead and linked CRM customer deleted successfully");
     onRefresh?.();
   } catch (err) {
     console.error(err);
