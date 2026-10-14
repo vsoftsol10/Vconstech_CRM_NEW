@@ -55,10 +55,25 @@ const getErpInvitationData = (response) => {
 };
 
 const buildInvitationUrl = (invitationId) => {
-  const configured =
+  let configured =
     process.env.CRM_INVITATION_FRONTEND_URL ||
     process.env.CRM_FRONTEND_URL ||
-    "http://localhost:5173/registration/invitations/:invitationId";
+    "https://crm.thevsoft.com/registration/invitations/:invitationId";
+
+  const erpBaseUrl = process.env.ERP_BASE_URL;
+  const crmFrontendUrl = process.env.CRM_FRONTEND_URL || "https://crm.thevsoft.com";
+  if (erpBaseUrl) {
+    try {
+      const configuredUrl = new URL(configured.replace(":invitationId", "placeholder"));
+      const erpUrl = new URL(erpBaseUrl);
+      const crmUrl = new URL(crmFrontendUrl);
+      if (configuredUrl.host === erpUrl.host && crmUrl.host !== erpUrl.host) {
+        configured = crmFrontendUrl;
+      }
+    } catch {
+      // Keep the configured URL; normal URL construction below handles it.
+    }
+  }
 
   if (configured.includes(":invitationId")) {
     return configured.replace(":invitationId", encodeURIComponent(invitationId));
