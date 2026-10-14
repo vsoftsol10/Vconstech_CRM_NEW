@@ -29,7 +29,7 @@ const InvitationRegistration = () => {
           throw new Error(data.error || "This invitation is invalid or no longer available.");
         }
 
-        if (mounted) setInvitation(data.invitation);
+        if (mounted) setInvitation(data.invitation || data.data?.invitation || data.data || data);
       } catch (err) {
         if (mounted) setError(err.message || "Unable to validate this invitation.");
       } finally {
@@ -44,24 +44,28 @@ const InvitationRegistration = () => {
     };
   }, [invitationId]);
 
-  const initialData = useMemo(() => ({
-    name: invitation?.customer?.name || "",
-    email: invitation?.customer?.email || "",
-    phoneNumber: invitation?.customer?.phone || "",
-    companyName: invitation?.customer?.companyName || "",
+  const initialData = useMemo(() => {
+    const customer = invitation?.customer || {};
+    const customPlan = invitation?.customPlan || customer.customPlan || {};
+    return {
+    name: customer.name || invitation?.name || "",
+    email: customer.email || invitation?.email || "",
+    phoneNumber: customer.phone || invitation?.phone || "",
+    companyName: customer.companyName || invitation?.companyName || "",
     crmLeadId: invitation?.crmLeadId || "",
     crmCustomerId: invitation?.crmCustomerId || "",
     role: "Admin",
-    package: normalizePackage(invitation?.customer?.subscriptionPlan),
-    customMembers: invitation?.customer?.customMembers ?? "",
-    customProjectLimit: invitation?.customer?.customProjectLimit ?? "",
-    customTemplateLimit: invitation?.customer?.customTemplateLimit ?? "",
-    customPrice: invitation?.customer?.customPrice ?? "",
-    city: invitation?.customer?.location || invitation?.customer?.city || "",
-    address: invitation?.customer?.address || "",
+    package: normalizePackage(customer.subscriptionPlan || invitation?.subscriptionPlan || invitation?.plan),
+    customMembers: customer.customMembers ?? customPlan.customMembers ?? invitation?.customMembers ?? "",
+    customProjectLimit: customer.customProjectLimit ?? customPlan.customProjectLimit ?? invitation?.customProjectLimit ?? "",
+    customTemplateLimit: customer.customTemplateLimit ?? customPlan.customTemplateLimit ?? invitation?.customTemplateLimit ?? "",
+    customPrice: customer.customPrice ?? customPlan.customPrice ?? invitation?.customPrice ?? "",
+    city: customer.location || customer.city || invitation?.location || invitation?.city || "",
+    address: customer.address || invitation?.address || "",
     password: "",
     confirmPassword: "",
-  }), [invitation]);
+  };
+  }, [invitation]);
 
   const handleRegistrationSubmit = async (formData) => {
     const registerResponse = await fetch(`${ERP_API_URL}/registration/invitations/${encodeURIComponent(invitationId)}/register`, {
