@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { calculateSubscriptionDates, normalizePlanKey } = require("./subscriptionDateService");
+const erpSupabaseCustomerService = require("./erpSupabaseCustomerService");
 
 const EMAIL = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 const PHONE = /^[6-9]\d{9}$/;
@@ -76,6 +77,35 @@ const datesFor = (value) => {
 const password = () => crypto.randomBytes(18).toString("base64url");
 
 const erpCreate = async (customer, temporaryPassword, request = fetch) => {
+  if (erpSupabaseCustomerService.isConfigured()) {
+    const plan = customer.subscription_plan;
+    const startDate = customer.subscription_start_date || customer.start_date;
+    const endDate = customer.subscription_end_date || customer.renewal_date;
+    return erpSupabaseCustomerService.createErpUser({
+      crmCustomerId: customer.id,
+      name: customer.customer_name,
+      email: customer.email,
+      phoneNumber: customer.phone,
+      role: customer.role || customer.customer_role || "Admin",
+      companyName: customer.company_name,
+      address: customer.address,
+      city: customer.city || customer.location,
+      gstNumber: customer.gst_number || "",
+      plan,
+      package: plan,
+      subscriptionPlan: plan,
+      startDate,
+      endDate,
+      subscriptionStartedAt: startDate,
+      subscriptionEndDate: endDate,
+      trialStartDate: startDate,
+      trialEndDate: endDate,
+      customMembers: customer.custom_users,
+      customProjectLimit: customer.custom_projects,
+      customTemplateLimit: customer.custom_templates,
+      customPrice: customer.custom_price,
+    }, temporaryPassword);
+  }
   const base = text(process.env.ERP_BASE_URL).replace(/\/$/, "");
   if (!base || !text(process.env.CRM_ERP_API_KEY)) throw new Error("ERP_BASE_URL and CRM_ERP_API_KEY must be configured");
   const plan = customer.subscription_plan;

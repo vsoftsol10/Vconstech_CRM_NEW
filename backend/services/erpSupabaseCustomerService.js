@@ -1,4 +1,6 @@
 const dns = require("dns");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const { Pool } = require("pg");
 
 if (typeof dns.setDefaultResultOrder === "function") {
@@ -214,6 +216,103 @@ const getFirstCompanyId = async (client) => {
   return result.rows[0]?.id || null;
 };
 
+const createErpUser = async (payload = {}, temporaryPassword) => {
+  const pool = getErpPool();
+  if (!pool) return null;
+  if (!temporaryPassword) throw new Error("Generated ERP password is required");
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const existing = await client.query(
+      'SELECT id, "clientId", "erpCustomerId", "crmCustomerId" FROM "User" WHERE "crmCustomerId" = $1 OR LOWER(email) = LOWER($2) LIMIT 1',
+      [String(payload.crmCustomerId || ""), payload.email]
+    );
+    const found = existing.rows[0];
+    if (found) {
+      if (String(found.crmCustomerId || "") !== String(payload.crmCustomerId || "")) {
+        const error = new Error("An ERP user with this email already exists.");
+        error.status = 409;
+        throw error;
+      }
+      await client.query("COMMIT");
+      return {
+        erpUserId: found.id,
+        clientId: found.clientId,
+        erpCustomerId: found.erpCustomerId,
+        credentialsAlreadyExist: true,
+      };
+    }
+
+    const companyId = payload.companyId || payload.erpCompanyId || (await getFirstCompanyId(client));
+    if (!companyId) {
+      const error = new Error("No ERP company exists to attach the customer to");
+      error.status = 400;
+      throw error;
+    }
+
+    const clientResult = await client.query(
+      `INSERT INTO "Client"
+       ("companyId", "clientName", "companyName", "clientPhone", "clientEmail", "clientAddress", "clientGST")
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
+      [companyId, payload.name, payload.companyName, payload.phoneNumber, payload.email, payload.address, payload.gstNumber || ""]
+    );
+    const erpClientId = clientResult.rows[0].id;
+    const erpCustomerId = formatErpCustomerId(erpClientId);
+    const userId = crypto.randomUUID();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    const startDate = payload.subscriptionStartedAt || payload.startDate || new Date().toISOString();
+    const endDate = payload.subscriptionEndDate || payload.endDate || payload.trialEndDate || null;
+    const passwordExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await client.query(
+      `INSERT INTO "User" (
+        id, name, email, password, "companyId", "updatedAt", role, "phoneNumber", city, address,
+        package, "customMembers", "gstNumber", "isActive", "accountStatus", "clientId",
+        "crmCustomerId", "erpCustomerId", "subscriptionPlan", "subscriptionStartedAt",
+        "subscriptionStatus", "trialEndDate", "trialStartDate", "customProjectLimit",
+        "customPrice", "mustChangePassword", "passwordExpiresAt", "customTemplateLimit"
+      ) VALUES (
+        $1,$2,$3,$4,$5,NOW(),$6,$7,$8,$9,$10,$11,$12,TRUE,'ACTIVE',$13,$14,$15,$16,$17,
+        'Subscription Active',$18,$17,$19,$20,TRUE,$21,$22
+      )`,
+      [
+        userId,
+        payload.name,
+        payload.email,
+        passwordHash,
+        companyId,
+        payload.role || "Admin",
+        payload.phoneNumber || "",
+        payload.city || "",
+        payload.address || "",
+        payload.package || payload.plan || null,
+        payload.customMembers || null,
+        payload.gstNumber || "",
+        erpClientId,
+        String(payload.crmCustomerId || ""),
+        erpCustomerId,
+        payload.subscriptionPlan || payload.plan || null,
+        startDate,
+        endDate,
+        payload.customProjectLimit || null,
+        payload.customPrice ?? null,
+        passwordExpiresAt,
+        payload.customTemplateLimit || null,
+      ]
+    );
+
+    await client.query("COMMIT");
+    return { erpUserId: userId, clientId: erpClientId, erpCustomerId, credentialsAlreadyExist: false };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 const createCustomer = async (payload = {}) => {
   const pool = getErpPool();
   if (!pool) return null;
@@ -394,6 +493,7 @@ const deleteCustomer = async (id) => {
 };
 
 module.exports = {
+  createErpUser,
   createCustomer,
   deleteCustomer,
   getCustomer,
