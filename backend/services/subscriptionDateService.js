@@ -89,7 +89,16 @@ const getPlanForSubscription = async (db, planName) => {
     throw error;
   }
 
-  const durationInDays = parsePlanDurationInDays(plan.duration);
+  let durationInDays = parsePlanDurationInDays(plan.duration);
+  // Advanced pricing is customer-specific, so the plan row may say "Customized Plan"
+  // instead of a fixed duration. The CRM's Advanced custom price is annual.
+  if (
+    !durationInDays &&
+    planKey === "advanced" &&
+    String(plan.duration || "").trim().toLowerCase() === "customized plan"
+  ) {
+    durationInDays = { unit: "years", value: 1 };
+  }
   if (!durationInDays) {
     const error = new Error(`Subscription plan "${plan.name}" has an invalid duration`);
     error.status = 400;
