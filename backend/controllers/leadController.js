@@ -67,7 +67,13 @@ const validateLeadPayload = (body) => {
   else if (!EMAIL_PATTERN.test(values.email)) errors.email = "Enter a valid email address";
   if (!values.status) errors.status = "Status is required";
   if (values.status !== "new" && !values.plan) errors.plan = "Plan is required";
-  if (String(values.plan || "").toLowerCase().includes("advanced")) {
+  const hasAdvancedPlanDetails = [
+    values.customMembers,
+    values.customProjectLimit,
+    values.customTemplateLimit,
+    values.customPrice,
+  ].some((value) => value != null);
+  if (String(values.plan || "").toLowerCase().includes("advanced") && hasAdvancedPlanDetails) {
     if (!Number.isInteger(values.customMembers) || values.customMembers < 1) errors.customMembers = "Enter at least 1 site engineer";
     if (!Number.isInteger(values.customProjectLimit) || values.customProjectLimit < 1) errors.customProjectLimit = "Enter at least 1 project";
     if (!Number.isInteger(values.customTemplateLimit) || values.customTemplateLimit < 1 || values.customTemplateLimit > 10) errors.customTemplateLimit = "Enter 1 to 10 templates";
@@ -500,9 +506,31 @@ const getLeadById = async (req, res) => {
 const updateLead = async (req, res) => {
   try {
     const { id } = req.params;
-    const { values, errors } = validateLeadPayload(req.body);
+    const currentLeadResult = await pool.query(
+      `SELECT custom_members, custom_project_limit, custom_template_limit, custom_price
+       FROM leads WHERE id = $1`,
+      [id]
+    );
+    if (currentLeadResult.rows.length === 0) {
+      return res.status(404).json({ message: "Lead not found" });
+    }
+
+    const currentLead = currentLeadResult.rows[0];
+    const updateBody = { ...req.body };
+    for (const [requestKey, column] of [
+      ["customMembers", "custom_members"],
+      ["customProjectLimit", "custom_project_limit"],
+      ["customTemplateLimit", "custom_template_limit"],
+      ["customPrice", "custom_price"],
+    ]) {
+      if (updateBody[requestKey] == null || updateBody[requestKey] === "") {
+        updateBody[requestKey] = currentLead[column];
+      }
+    }
+
+    const { values, errors } = validateLeadPayload(updateBody);
     if (Object.keys(errors).length > 0) return sendValidationError(res, errors);
-    const { followUpDate, followUpTime, reminderEnabled } = getReminderFields(req.body);
+    const { followUpDate, followUpTime, reminderEnabled } = getReminderFields(updateBody);
 
     const converted = await pool.query(
       "SELECT 1 FROM customers WHERE lead_id = $1 LIMIT 1",
